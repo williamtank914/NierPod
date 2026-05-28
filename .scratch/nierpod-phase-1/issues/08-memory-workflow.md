@@ -15,15 +15,15 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] 用户可以查看当前 Memory。
-- [ ] 用户可以从 Memory workflow 生成 memory summary prompt。
-- [ ] 用户可以粘贴外部 LLM 生成的 memory draft。
-- [ ] 替换当前 Memory 前必须显示确认步骤。
-- [ ] 确认替换时，旧 Memory 会归档到历史 Memory。
-- [ ] 取消替换时，当前 Memory 不变。
-- [ ] Memory 文件和历史归档保持人类可读 Markdown。
-- [ ] Memory 更新会追加必要 Journal 事件。
-- [ ] 有测试覆盖 draft 粘贴、确认替换、取消替换、旧 Memory 归档和重启恢复。
+- [x] 用户可以查看当前 Memory。
+- [x] 用户可以从 Memory workflow 生成 memory summary prompt。
+- [x] 用户可以粘贴外部 LLM 生成的 memory draft。
+- [x] 替换当前 Memory 前必须显示确认步骤。
+- [x] 确认替换时，旧 Memory 会归档到历史 Memory。
+- [x] 取消替换时，当前 Memory 不变。
+- [x] Memory 文件和历史归档保持人类可读 Markdown。
+- [x] Memory 更新会追加必要 Journal 事件。
+- [x] 有测试覆盖 draft 粘贴、确认替换、取消替换、旧 Memory 归档和重启恢复。
 
 ## Blocked by
 
@@ -36,3 +36,8 @@ Type: AFK
 - 已实现 `src/modules/memory/` 的当前 Memory 读取、Memory summary prompt 生成、Memory draft stage、取消替换和确认替换。
 - 确认替换时会先把旧 `memory.md` 归档到 `memory/` 下的人类可读 Markdown 文件，再写入新的 `memory.md`，并追加 workspace Journal 事件。
 - 已通过 IPC/preload 接入 renderer，右侧工作台支持查看当前 Memory、生成 Memory prompt、粘贴 draft、确认替换、取消替换和重启后从 `memory.md` 恢复。
+
+## Verification
+
+- `pnpm exec tsx --test tests/memory-workflow.test.ts`
+- `pnpm exec tsx --test tests/ipc-contract.test.ts`

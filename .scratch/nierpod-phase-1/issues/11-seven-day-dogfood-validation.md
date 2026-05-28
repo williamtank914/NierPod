@@ -37,3 +37,20 @@ Type: HITL
 - `.scratch/nierpod-phase-1/issues/09-search-rebuildable-index.md`
 - `.scratch/nierpod-phase-1/issues/10-external-file-sync-conflict.md`
 
+## Comments
+
+### 2026-05-28 execution note
+
+- 代码功能前置 issue 01-10 已进入可验证状态，issue 11 仍需要真实连续 7 天使用，不能在单次实现中标记完成。
+- 如果从 2026-05-28 作为 Day 1 开始记录，Day 7 是 2026-06-03；只有完成当天真实使用记录后，才能判断 Phase 1 MVP 是否达标。
+- 记录时不要只打功能清单，应写明是否出现数据丢失、流程断点、外部 Markdown 覆盖风险、搜索重建失败、Today Focus 误导、Prompt Pack 上下文无效或 Memory 更新负担过重。
+
+## Validation log
+
+- [ ] Day 1 / 2026-05-28：记录 NierPod 自身 Project、当天真实 Task、Inbox/Today Focus/Journal 使用情况。
+- [ ] Day 2 / 2026-05-29：记录 Task detail、Artifacts、Prompt Pack 使用情况。
+- [ ] Day 3 / 2026-05-30：记录 Memory workflow 和 saved LLM notes 使用情况。
+- [ ] Day 4 / 2026-05-31：记录 Search、索引重建和外部 Markdown 修改情况。
+- [ ] Day 5 / 2026-06-01：记录跨 Project/Task 切换、Today Focus 排序和 override 是否有效。
+- [ ] Day 6 / 2026-06-02：记录是否出现数据丢失、冲突、流程断点或需要回退散乱笔记。
+- [ ] Day 7 / 2026-06-03：输出 Phase 1 MVP 是否达标结论和必须修复的问题。

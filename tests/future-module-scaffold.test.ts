@@ -24,7 +24,8 @@ test("Phase 1 module boundaries advertise implemented and placeholder modules", 
     ],
     ["Today Focus", { phase: "phase-1", status: "implemented" }],
     ["Inbox", { phase: "phase-1", status: "implemented" }],
-    ["Search index", { phase: "phase-1-placeholder", status: "not-implemented" }],
+    ["Search index", { phase: "phase-1", status: "implemented" }],
+    ["External file sync", { phase: "phase-1", status: "implemented" }],
     [
       "Prompt Pack workflow",
       { phase: "phase-1", status: "implemented" }
@@ -80,6 +81,7 @@ test("Phase 0 handoff docs cover verification commands and Phase 1 module entry 
     "src/modules/today-focus/",
     "src/modules/inbox/",
     "src/modules/search/",
+    "src/modules/sync/",
     "src/modules/prompt-pack/",
     "src/modules/journal/",
     "src/modules/memory/",

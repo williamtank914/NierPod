@@ -1,9 +1,9 @@
 # Phase 1 模块地图
 
 日期：2026-05-28
-状态：Phase 1 workspace lifecycle、Project lifecycle、Task detail、Today Focus、Inbox 已接入
+状态：Phase 1 workspace lifecycle、Project lifecycle、Task detail、Today Focus、Inbox、Prompt Pack、Memory、Search 和外部文件冲突处理已接入
 
-本文件说明 Phase 1 agent 应该从哪些模块扩展。Workspace management、Markdown parser、Journal hook、Today Focus 和 Inbox 已进入可用实现；Project/Task 的独立 domain module 仍是后续抽取边界。当前实现不创建假 Project 或假 Task 数据，Project/Task/Inbox/Today Focus 状态从 workspace 中的人类可读 Markdown 重建。
+本文件说明 Phase 1 agent 应该从哪些模块扩展。Workspace management、Markdown parser、Journal hook、Today Focus、Inbox、Prompt Pack、Memory、Search 和外部文件冲突处理已进入可用实现；Project/Task 的独立 domain module 仍是后续抽取边界。当前实现不创建假 Project 或假 Task 数据，Project/Task/Inbox/Today Focus 状态从 workspace 中的人类可读 Markdown 重建。
 
 ## 共享类型
 
@@ -18,11 +18,12 @@
 - `src/modules/markdown/`：Markdown parser/serializer。已实现 Project/Task Markdown 的 frontmatter、section、Task order 和 Todos checklist 解析/序列化。
 - `src/modules/today-focus/`：Today Focus。已实现跨 Project active Task 聚合、排序、blocked 可见性和 `today.md` 每日 override。
 - `src/modules/inbox/`：Inbox。已实现 `inbox.md` 捕获、状态读写、转 Project、转 Task、附加 Task Context、archive 和 delete。
-- `src/modules/search/`：SQLite index/Search。后续实现可重建的 SQLite FTS 或等价本地索引。
-- `src/modules/prompt-pack/`：Prompt Pack workflow。后续实现手动 LLM prompt pack 生成、copy 和 paste-back flow。
+- `src/modules/search/`：Search index。已实现可重建 JSON 派生索引，覆盖 Project、Task、Inbox、Artifact 和 saved LLM note；索引删除或损坏后可从 Markdown 重建。
+- `src/modules/sync/`：External file sync。已实现 workspace 文件快照、runtime watcher、外部修改通知和冲突 copy 边界。
+- `src/modules/prompt-pack/`：Prompt Pack workflow。已实现手动 LLM prompt pack 生成、copy、paste-back draft 和 saved LLM note。
 - `src/modules/journal/`：Journal。已实现 Project 和 Task lifecycle 的 append-only 事件写入 hook；后续实现完整浏览、筛选和恢复体验。
-- `src/modules/memory/`：Memory。后续实现 LLM 可消费摘要的展示、替换确认和历史归档。
-- `src/modules/artifacts/`：Artifact registry。后续实现本地 Markdown artifact、URL artifact、manifest 和 Task 关联。
+- `src/modules/memory/`：Memory。已实现 LLM 可消费摘要的展示、Memory summary prompt、替换确认和历史归档。
+- `src/modules/artifacts/`：Artifact registry。已实现本地 Markdown artifact、URL artifact、manifest 和 Task 关联。
 
 ## 扩展原则
 

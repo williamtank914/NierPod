@@ -8,6 +8,7 @@ import { markdownModuleBoundary } from "./markdown";
 import { memoryModuleBoundary } from "./memory";
 import { promptPackModuleBoundary } from "./prompt-pack";
 import { searchModuleBoundary } from "./search";
+import { syncModuleBoundary } from "./sync";
 import { todayFocusModuleBoundary } from "./today-focus";
 import { workspaceModuleBoundary } from "./workspace";
 
@@ -19,6 +20,7 @@ export const futureModuleBoundaries: FutureModuleBoundary[] = [
   todayFocusModuleBoundary,
   inboxModuleBoundary,
   searchModuleBoundary,
+  syncModuleBoundary,
   promptPackModuleBoundary,
   journalModuleBoundary,
   memoryModuleBoundary,

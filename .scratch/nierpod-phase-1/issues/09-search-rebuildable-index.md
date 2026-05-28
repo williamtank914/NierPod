@@ -1,6 +1,6 @@
 # Search and rebuildable index
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: AFK
 
 ## Parent
@@ -15,14 +15,28 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] 搜索覆盖 Project title、goal 和核心 Project 元信息。
-- [ ] 搜索覆盖 Task title、status、priority、Context、Todos、Progress、Artifacts 和 Acceptance Criteria。
-- [ ] 搜索覆盖 Inbox、artifact records 和 saved LLM notes。
-- [ ] 应用启动时可以从 Markdown workspace 建立或重建索引。
-- [ ] 核心内容变化后索引可以更新。
-- [ ] 搜索结果展示足够上下文，并能跳转到对应 Project、Task、Inbox item、artifact 或 LLM note。
-- [ ] 索引删除或损坏后，不影响 Markdown 真相源，并可重建。
-- [ ] 有测试覆盖重建索引、增量更新、跨类型搜索、结果跳转目标和索引恢复。
+- [x] 搜索覆盖 Project title、goal 和核心 Project 元信息。
+- [x] 搜索覆盖 Task title、status、priority、Context、Todos、Progress、Artifacts 和 Acceptance Criteria。
+- [x] 搜索覆盖 Inbox、artifact records 和 saved LLM notes。
+- [x] 应用启动时可以从 Markdown workspace 建立或重建索引。
+- [x] 核心内容变化后索引可以更新。
+- [x] 搜索结果展示足够上下文，并能跳转到对应 Project、Task、Inbox item、artifact 或 LLM note。
+- [x] 索引删除或损坏后，不影响 Markdown 真相源，并可重建。
+- [x] 有测试覆盖重建索引、增量更新、跨类型搜索、结果跳转目标和索引恢复。
+
+## Implementation notes
+
+- `src/modules/search/` 实现 rebuildable JSON 派生索引，写入 `.nierpod/search-index.json`；Markdown workspace 仍是真相源。
+- 索引覆盖 Project、Task、Inbox、Task artifact 记录和 saved LLM notes，并为结果返回可跳转 target。
+- main 进程在打开、创建、读取当前 workspace 和 mutation 返回路径刷新搜索索引；`workspace.search` 搜索时也会从 Markdown 重建，确保索引删除或损坏后可恢复。
+- renderer 左栏新增 Workspace Search，展示结果 kind、路径和 preview，点击 Project/Task/artifact/LLM note 结果会切换到对应 Project/Task。
+
+## Verification
+
+- `pnpm exec tsx --test tests/search-rebuildable-index.test.ts`
+- `pnpm exec tsx --test tests/ipc-contract.test.ts`
+- `pnpm exec tsx --test tests/renderer-workbench.test.ts`
+- `pnpm typecheck`
 
 ## Blocked by
 
@@ -33,4 +47,3 @@ Type: AFK
 - `.scratch/nierpod-phase-1/issues/06-inbox-capture-conversion.md`
 - `.scratch/nierpod-phase-1/issues/07-prompt-pack-workflow.md`
 - `.scratch/nierpod-phase-1/issues/08-memory-workflow.md`
-

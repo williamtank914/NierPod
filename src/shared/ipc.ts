@@ -1,5 +1,7 @@
 import type {
   ArtifactInput,
+  ConflictCopyInput,
+  ConflictCopyResult,
   InboxItem,
   InboxItemInput,
   MemoryDocument,
@@ -9,15 +11,20 @@ import type {
   PromptOutputDraft,
   PromptPack,
   PromptPackBuildInput,
+  SearchQueryInput,
+  SearchResult,
   SavedLlmNote,
   TaskInput,
   TaskUpdateInput,
   TodayFocusItem,
   TodayFocusOverrideAction,
-  WorkspaceState
+  WorkspaceState,
+  WorkspaceExternalFileChange
 } from "./domain";
 
 export const workspaceIpcChannel = "nierpod:workspace" as const;
+export const workspaceExternalFileChangeChannel =
+  "nierpod:workspace-external-file-change" as const;
 
 export const workspaceOperations = [
   "workspace.describeAccess",
@@ -36,6 +43,8 @@ export const workspaceOperations = [
   "workspace.savePromptOutputAsLlmNote",
   "workspace.readMemory",
   "workspace.replaceMemory",
+  "workspace.search",
+  "workspace.saveConflictCopy",
   "workspace.getTodayFocus",
   "workspace.setTodayFocusOverride",
   "workspace.getInboxItems",
@@ -167,6 +176,13 @@ export type NierPodBridge = {
     replaceMemory: (
       draft: MemoryDraft
     ) => Promise<IpcResponse<MemoryReplacementIpcResult>>;
+    search: (input: SearchQueryInput) => Promise<IpcResponse<SearchResult[]>>;
+    saveConflictCopy: (
+      input: ConflictCopyInput
+    ) => Promise<IpcResponse<ConflictCopyResult>>;
+    onExternalFileChange: (
+      listener: (change: WorkspaceExternalFileChange) => void
+    ) => () => void;
     getTodayFocus: () => Promise<IpcResponse<TodayFocusItem[]>>;
     setTodayFocusOverride: (
       taskId: string,

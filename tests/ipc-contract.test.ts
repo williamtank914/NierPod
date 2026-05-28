@@ -27,6 +27,8 @@ test("workspace IPC exposes only allowlisted Phase 1 operations", () => {
     "workspace.savePromptOutputAsLlmNote",
     "workspace.readMemory",
     "workspace.replaceMemory",
+    "workspace.search",
+    "workspace.saveConflictCopy",
     "workspace.getTodayFocus",
     "workspace.setTodayFocusOverride",
     "workspace.getInboxItems",

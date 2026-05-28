@@ -20,12 +20,18 @@ import type {
   MemoryDraft,
   TaskStatus,
   PromptPack,
+  SearchResult,
   TodayFocusItem,
   TodayFocusOverrideAction,
+  WorkspaceExternalFileChange,
   WorkspaceSnapshot,
   WorkspaceState
 } from "../src/shared/domain";
 import type { NierPodBridge } from "../src/shared/ipc";
+
+let emitExternalFileChange:
+  | ((change: WorkspaceExternalFileChange) => void)
+  | null = null;
 
 const emptyWorkspaceState: WorkspaceState = {
   phase: "phase-1",
@@ -137,6 +143,9 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
   let inboxCounter = 0;
   let inboxItems: InboxItem[] = [];
   let memorySource = "# Memory\n\n## Current Summary\n\nRenderer memory baseline.\n";
+  const externalFileChangeListeners = new Set<
+    (change: WorkspaceExternalFileChange) => void
+  >();
   const todayFocusOverrides = new Map<string, TodayFocusOverrideAction>();
   const journalByProjectId = new Map<string, string>();
   const stateAfterOpen: WorkspaceState = {
@@ -159,6 +168,10 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
     }
 
     return currentState.current;
+  }
+
+  function cloneState(state: WorkspaceState): WorkspaceState {
+    return JSON.parse(JSON.stringify(state)) as WorkspaceState;
   }
 
   function replaceProject(project: Project) {
@@ -234,6 +247,73 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
     return item;
   }
 
+  emitExternalFileChange = (change) => {
+    for (const listener of externalFileChangeListeners) {
+      listener(change);
+    }
+  };
+
+  function searchWorkspace(query: string): SearchResult[] {
+    const normalizedQuery = query.toLowerCase().trim();
+
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    return currentWorkspace().projects.flatMap((project) => {
+      const projectResults: SearchResult[] = [
+        project.title,
+        project.goal,
+        project.successCriteria
+      ]
+        .join("\n")
+        .toLowerCase()
+        .includes(normalizedQuery)
+        ? [
+            {
+              id: project.id,
+              title: project.title,
+              preview: project.goal,
+              relativePath: `projects/${project.id}/project.md`,
+              target: {
+                kind: "project",
+                projectId: project.id,
+                relativePath: `projects/${project.id}/project.md`
+              },
+              score: 1
+            }
+          ]
+        : [];
+      const taskResults: SearchResult[] = project.tasks
+        .filter((task) =>
+          [
+            task.title,
+            task.context,
+            task.progress,
+            task.acceptanceCriteria
+          ]
+            .join("\n")
+            .toLowerCase()
+            .includes(normalizedQuery)
+        )
+        .map((task) => ({
+          id: task.id,
+          title: task.title,
+          preview: task.context || task.progress || task.acceptanceCriteria,
+          relativePath: `projects/${project.id}/tasks/${task.id}.md`,
+          target: {
+            kind: "task" as const,
+            projectId: project.id,
+            taskId: task.id,
+            relativePath: `projects/${project.id}/tasks/${task.id}.md`
+          },
+          score: 1
+        }));
+
+      return [...projectResults, ...taskResults];
+    });
+  }
+
   const bridge: NierPodBridge = {
     appName: "NierPod",
     phase: "phase-1",
@@ -250,7 +330,7 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
       }),
       getCurrent: async () => ({
         ok: true,
-        data: currentState
+        data: cloneState(currentState)
       }),
       selectExisting: async () => {
         currentState = stateAfterOpen;
@@ -382,7 +462,7 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
           progress: "",
           artifacts: [],
           acceptanceCriteria: "",
-          markdownPath: `${project.markdownPath}/../tasks/task-${taskCounter}.md`
+          markdownPath: `${currentWorkspace().rootPath}/projects/${project.id}/tasks/task-${taskCounter}.md`
         };
         const updatedProject: Project = {
           ...project,
@@ -616,6 +696,23 @@ Keep output advisory.
           }
         };
       },
+      search: async (input) => ({
+        ok: true,
+        data: searchWorkspace(input.query)
+      }),
+      saveConflictCopy: async (input) => ({
+        ok: true,
+        data: {
+          relativePath: `conflicts/${input.relativePath.replaceAll("/", "-")}`
+        }
+      }),
+      onExternalFileChange: (listener) => {
+        externalFileChangeListeners.add(listener);
+
+        return () => {
+          externalFileChangeListeners.delete(listener);
+        };
+      },
       getTodayFocus: async () => ({
         ok: true,
         data: readTodayFocus()
@@ -715,7 +812,7 @@ Keep output advisory.
           progress: "",
           artifacts: [],
           acceptanceCriteria: "",
-          markdownPath: `${project.markdownPath}/../tasks/task-${taskCounter}.md`
+          markdownPath: `${currentWorkspace().rootPath}/projects/${project.id}/tasks/task-${taskCounter}.md`
         };
 
         replaceProject({
@@ -811,6 +908,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  emitExternalFileChange = null;
 });
 
 async function changeField(
@@ -1178,4 +1276,109 @@ test("renderer runs Memory summary prompt and confirmed replacement workflow", a
 
   await view.findByText("Renderer memory replacement.");
   await view.findByText(/Archived previous Memory to memory\//);
+});
+
+test("renderer searches workspace content and opens Task result targets", async () => {
+  const view = render(createElement(App));
+
+  await view.findByText(/No workspace selected/);
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("button", { name: "Create Workspace" }));
+  });
+
+  await changeField(view, "Project title", "NierPod");
+  await changeField(view, "Project goal", "Ship Phase 1");
+  await changeField(view, "Success criteria", "- Search jumps to targets.");
+  await clickButton(view, "Create Project");
+  await changeField(view, "Task title", "Build search workflow");
+  await clickButton(view, "Create Task");
+
+  await act(async () => {
+    fireEvent.click(
+      await view.findByRole("button", { name: "Build search workflow" })
+    );
+  });
+
+  await changeField(view, "Context", "Renderer search target needle.");
+  await clickButton(view, "Save Task");
+  await changeField(view, "Workspace search", "Renderer search target needle");
+  await clickButton(view, "Search Workspace");
+
+  assert.ok((await view.findAllByText("Renderer search target needle.")).length > 0);
+  await clickButton(view, "Open result Build search workflow");
+
+  assert.equal(
+    (view.getByLabelText("Selected task title") as HTMLInputElement).value,
+    "Build search workflow"
+  );
+  assert.equal(
+    (view.getByLabelText("Context") as HTMLTextAreaElement).value,
+    "Renderer search target needle."
+  );
+});
+
+test("renderer prompts before external file changes overwrite an unsaved Task draft", async () => {
+  const view = render(createElement(App));
+
+  await view.findByText(/No workspace selected/);
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("button", { name: "Create Workspace" }));
+  });
+
+  await changeField(view, "Project title", "NierPod");
+  await changeField(view, "Project goal", "Ship Phase 1");
+  await changeField(view, "Success criteria", "- Conflicts are visible.");
+  await clickButton(view, "Create Project");
+  await changeField(view, "Task title", "Protect external edits");
+  await clickButton(view, "Create Task");
+
+  await act(async () => {
+    fireEvent.click(
+      await view.findByRole("button", { name: "Protect external edits" })
+    );
+  });
+
+  await changeField(view, "Context", "Unsaved renderer draft.");
+
+  await act(async () => {
+    emitExternalFileChange?.({
+      relativePath: "projects/project-1/tasks/task-1.md",
+      kind: "modified",
+      detectedAt: "2026-05-28T00:00:00.000Z"
+    });
+  });
+
+  await view.findByText("External file changed");
+  view.getByText("projects/project-1/tasks/task-1.md");
+  await clickButton(view, "Keep Current Draft");
+
+  assert.equal(
+    (view.getByLabelText("Context") as HTMLTextAreaElement).value,
+    "Unsaved renderer draft."
+  );
+
+  await act(async () => {
+    emitExternalFileChange?.({
+      relativePath: "projects/project-1/tasks/task-1.md",
+      kind: "modified",
+      detectedAt: "2026-05-28T00:00:01.000Z"
+    });
+  });
+
+  await clickButton(view, "Save Conflict Copy");
+  await view.findByText(/Conflict copy saved to conflicts\//);
+
+  await act(async () => {
+    emitExternalFileChange?.({
+      relativePath: "projects/project-1/tasks/task-1.md",
+      kind: "modified",
+      detectedAt: "2026-05-28T00:00:02.000Z"
+    });
+  });
+
+  await clickButton(view, "Reload from Disk");
+
+  assert.equal((view.getByLabelText("Context") as HTMLTextAreaElement).value, "");
 });

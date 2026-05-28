@@ -1,5 +1,6 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import {
+  workspaceExternalFileChangeChannel,
   workspaceIpcChannel,
   type IpcResponse,
   type InboxMutationResult,
@@ -14,6 +15,8 @@ import {
 } from "../shared/ipc";
 import type {
   ArtifactInput,
+  ConflictCopyInput,
+  ConflictCopyResult,
   InboxItem,
   InboxItemInput,
   MemoryDocument,
@@ -22,11 +25,14 @@ import type {
   PromptOutputDraft,
   PromptPack,
   PromptPackBuildInput,
+  SearchQueryInput,
+  SearchResult,
   TaskInput,
   TaskUpdateInput,
   TodayFocusItem,
   TodayFocusOverrideAction,
-  WorkspaceState
+  WorkspaceState,
+  WorkspaceExternalFileChange
 } from "../shared/domain";
 
 const invokeWorkspace = <TData>(
@@ -107,6 +113,27 @@ const bridge: NierPodBridge = {
       invokeWorkspace<MemoryReplacementIpcResult>("workspace.replaceMemory", {
         draft
       }),
+    search: (input: SearchQueryInput) =>
+      invokeWorkspace<SearchResult[]>("workspace.search", {
+        input
+      }),
+    saveConflictCopy: (input: ConflictCopyInput) =>
+      invokeWorkspace<ConflictCopyResult>("workspace.saveConflictCopy", {
+        input
+      }),
+    onExternalFileChange: (
+      listener: (change: WorkspaceExternalFileChange) => void
+    ) => {
+      const handler = (_event: IpcRendererEvent, change: unknown) => {
+        listener(change as WorkspaceExternalFileChange);
+      };
+
+      ipcRenderer.on(workspaceExternalFileChangeChannel, handler);
+
+      return () => {
+        ipcRenderer.off(workspaceExternalFileChangeChannel, handler);
+      };
+    },
     getTodayFocus: () =>
       invokeWorkspace<TodayFocusItem[]>("workspace.getTodayFocus"),
     setTodayFocusOverride: (

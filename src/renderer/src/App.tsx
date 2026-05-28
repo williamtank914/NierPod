@@ -11,12 +11,15 @@ import type {
   PromptOutputDraft,
   PromptPack,
   PromptPackIntent,
+  SearchResult,
+  Task,
   TaskLane,
   TaskPriority,
   TaskStatus,
   TaskTodoInput,
   TodayFocusItem,
   TodayFocusOverrideAction,
+  WorkspaceExternalFileChange,
   WorkspaceMarkdownFile,
   WorkspaceState
 } from "../../shared/domain";
@@ -58,6 +61,11 @@ type ArtifactDraft = {
   title: string;
   url: string;
   markdownContent: string;
+};
+
+type FileConflictState = {
+  change: WorkspaceExternalFileChange;
+  draftSource: string;
 };
 
 const emptyProjectDraft: ProjectDraft = {
@@ -150,6 +158,11 @@ export function App() {
   const [memoryDraftText, setMemoryDraftText] = useState("");
   const [memoryDraft, setMemoryDraft] = useState<MemoryDraft | null>(null);
   const [memoryMessage, setMemoryMessage] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchMessage, setSearchMessage] = useState("");
+  const [fileConflict, setFileConflict] = useState<FileConflictState | null>(null);
+  const [syncMessage, setSyncMessage] = useState("");
   const workspace = workspaceState.current;
   const projects = workspace?.activeProjects ?? [];
   const selectedProject =
@@ -205,6 +218,10 @@ export function App() {
     if (!workspace) {
       setSelectedProjectId(null);
       setSelectedTaskId(null);
+      setSearchResults([]);
+      setSearchMessage("");
+      setFileConflict(null);
+      setSyncMessage("");
       return;
     }
 
@@ -364,6 +381,57 @@ export function App() {
       isCurrent = false;
     };
   }, [workspace]);
+
+  useEffect(() => {
+    const bridge = window.nierpod;
+
+    if (!bridge || !workspace) {
+      return;
+    }
+
+    const workspaceBridge = bridge.workspace;
+    const selectedTaskRelativePath =
+      selectedTask && workspace
+        ? toWorkspaceRelativePath(workspace.rootPath, selectedTask.markdownPath)
+        : null;
+    const selectedTaskDraftSource =
+      selectedTask && isTaskDraftDirty(selectedTask, taskDraft)
+        ? serializeTaskDraftForConflict(selectedTask, taskDraft)
+        : null;
+
+    return workspaceBridge.onExternalFileChange((change) => {
+      if (
+        selectedTaskRelativePath &&
+        change.relativePath === selectedTaskRelativePath &&
+        selectedTaskDraftSource
+      ) {
+        setFileConflict({
+          change,
+          draftSource: selectedTaskDraftSource
+        });
+        setSyncMessage("");
+        return;
+      }
+
+      void (async () => {
+        const response = await workspaceBridge.getCurrent();
+
+        setWorkspaceState(
+          response.ok
+            ? response.data
+            : {
+                ...fallbackWorkspaceState,
+                message: response.error.message
+              }
+        );
+        setSyncMessage(`${change.relativePath} reloaded from disk.`);
+      })();
+    });
+  }, [
+    selectedTask,
+    taskDraft,
+    workspace
+  ]);
 
   async function runWorkspaceAction(action: WorkspaceAction) {
     const bridge = window.nierpod;
@@ -746,6 +814,96 @@ export function App() {
     applyMemoryReplacementResponse(response);
   }
 
+  async function searchWorkspace() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !workspace) {
+      return;
+    }
+
+    const response = await bridge.workspace.search({
+      query: searchQuery
+    });
+
+    if (!response.ok) {
+      setSearchResults([]);
+      setSearchMessage(response.error.message);
+      return;
+    }
+
+    setSearchResults(response.data);
+    setSearchMessage(
+      response.data.length === 0
+        ? "No search results."
+        : `${response.data.length} search results.`
+    );
+  }
+
+  function openSearchResult(result: SearchResult) {
+    switch (result.target.kind) {
+      case "project":
+        setSelectedProjectId(result.target.projectId);
+        setSelectedTaskId(null);
+        break;
+      case "task":
+      case "artifact":
+        setSelectedProjectId(result.target.projectId);
+        setSelectedTaskId(result.target.taskId);
+        break;
+      case "llm-note":
+        if (result.target.projectId) {
+          setSelectedProjectId(result.target.projectId);
+        }
+
+        if (result.target.taskId) {
+          setSelectedTaskId(result.target.taskId);
+        }
+
+        break;
+      case "inbox":
+        setSearchMessage(`Inbox result is stored in ${result.relativePath}.`);
+        break;
+    }
+  }
+
+  async function reloadConflictFromDisk() {
+    const bridge = window.nierpod;
+
+    if (!bridge) {
+      return;
+    }
+
+    applyWorkspaceStateResponse(await bridge.workspace.getCurrent());
+    setFileConflict(null);
+    setSyncMessage("Reloaded from disk.");
+  }
+
+  function keepCurrentDraft() {
+    setFileConflict(null);
+    setSyncMessage("Current draft kept.");
+  }
+
+  async function saveConflictCopy() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !fileConflict) {
+      return;
+    }
+
+    const response = await bridge.workspace.saveConflictCopy({
+      relativePath: fileConflict.change.relativePath,
+      draftSource: fileConflict.draftSource
+    });
+
+    if (!response.ok) {
+      setSyncMessage(response.error.message);
+      return;
+    }
+
+    setFileConflict(null);
+    setSyncMessage(`Conflict copy saved to ${response.data.relativePath}.`);
+  }
+
   function applyMemoryReplacementResponse(
     response: IpcResponse<MemoryReplacementIpcResult>
   ) {
@@ -894,6 +1052,17 @@ export function App() {
 
           <p className="bridge-copy">{workspaceAccess}</p>
         </section>
+
+        {workspace ? (
+          <SearchPanel
+            query={searchQuery}
+            results={searchResults}
+            message={searchMessage}
+            onQueryChange={setSearchQuery}
+            onSearch={() => void searchWorkspace()}
+            onOpenResult={openSearchResult}
+          />
+        ) : null}
 
         {workspace ? (
           <InboxPanel
@@ -1073,6 +1242,14 @@ export function App() {
           <h2>{selectedTask ? "Task detail" : "Markdown Files"}</h2>
         </div>
 
+        <FileConflictPanel
+          conflict={fileConflict}
+          message={syncMessage}
+          onReload={() => void reloadConflictFromDisk()}
+          onKeep={keepCurrentDraft}
+          onSaveCopy={() => void saveConflictCopy()}
+        />
+
         {selectedTask ? (
           <TaskDetailEditor
             draft={taskDraft}
@@ -1188,6 +1365,54 @@ export function App() {
         />
       </aside>
     </main>
+  );
+}
+
+function FileConflictPanel(props: {
+  conflict: FileConflictState | null;
+  message: string;
+  onReload: () => void;
+  onKeep: () => void;
+  onSaveCopy: () => void;
+}) {
+  if (!props.conflict && !props.message) {
+    return null;
+  }
+
+  return (
+    <section className="detail-section conflict-panel" aria-labelledby="conflict-title">
+      {props.conflict ? (
+        <>
+          <h3 id="conflict-title">External file changed</h3>
+          <p>{props.conflict.change.relativePath}</p>
+          <div className="workspace-actions">
+            <button
+              className="workspace-button"
+              type="button"
+              onClick={props.onReload}
+            >
+              Reload from Disk
+            </button>
+            <button
+              className="workspace-button"
+              type="button"
+              onClick={props.onKeep}
+            >
+              Keep Current Draft
+            </button>
+          </div>
+          <button
+            className="workspace-button primary"
+            type="button"
+            onClick={props.onSaveCopy}
+          >
+            Save Conflict Copy
+          </button>
+        </>
+      ) : null}
+
+      {props.message ? <p className="workflow-message">{props.message}</p> : null}
+    </section>
   );
 }
 
@@ -1490,6 +1715,56 @@ function InboxPanel(props: {
         ) : (
           <p>No Inbox items.</p>
         )}
+      </div>
+    </section>
+  );
+}
+
+function SearchPanel(props: {
+  query: string;
+  results: SearchResult[];
+  message: string;
+  onQueryChange: (query: string) => void;
+  onSearch: () => void;
+  onOpenResult: (result: SearchResult) => void;
+}) {
+  return (
+    <section className="workspace-entry search-panel" aria-labelledby="search-title">
+      <h2 id="search-title">Search</h2>
+      <label>
+        <span>Workspace search</span>
+        <input
+          value={props.query}
+          onInput={(event) => props.onQueryChange(event.currentTarget.value)}
+        />
+      </label>
+      <button
+        className="workspace-button primary"
+        type="button"
+        onClick={props.onSearch}
+      >
+        Search Workspace
+      </button>
+
+      {props.message ? <p className="workflow-message">{props.message}</p> : null}
+
+      <div className="search-results">
+        {props.results.map((result) => (
+          <article className="search-result" key={`${result.target.kind}-${result.id}`}>
+            <button
+              type="button"
+              aria-label={`Open result ${result.title}`}
+              onClick={() => props.onOpenResult(result)}
+            >
+              {result.title}
+            </button>
+            <div>
+              <code>{result.target.kind}</code>
+              <small>{result.relativePath}</small>
+            </div>
+            <p>{result.preview}</p>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -1973,6 +2248,71 @@ function readDependencyInput(value: string): string[] {
     .split(",")
     .map((dependency) => dependency.trim())
     .filter(Boolean);
+}
+
+function isTaskDraftDirty(task: Task, draft: TaskDraft): boolean {
+  return (
+    draft.title !== task.title ||
+    draft.status !== task.status ||
+    draft.priority !== task.priority ||
+    draft.lane !== task.lane ||
+    (draft.dueDate || null) !== task.dueDate ||
+    draft.dependencies !== task.dependencies.join(", ") ||
+    draft.context !== task.context ||
+    draft.progress !== task.progress ||
+    draft.acceptanceCriteria !== task.acceptanceCriteria ||
+    JSON.stringify(draft.todos) !==
+      JSON.stringify(
+        task.todos.map((todo) => ({
+          text: todo.text,
+          completed: todo.completed
+        }))
+      )
+  );
+}
+
+function serializeTaskDraftForConflict(task: Task, draft: TaskDraft): string {
+  const dependencies = readDependencyInput(draft.dependencies);
+
+  return `---
+id: ${task.id}
+project_id: ${task.projectId}
+title: ${draft.title}
+status: ${draft.status}
+priority: ${draft.priority}
+lane: ${draft.lane}
+due_date: ${draft.dueDate}
+dependencies: ${dependencies.join(", ")}
+---
+# ${draft.title}
+
+## Context
+
+${draft.context}
+
+## Todos
+
+${draft.todos
+  .map((todo) => `- [${todo.completed ? "x" : " "}] ${todo.text}`)
+  .join("\n")}
+
+## Progress
+
+${draft.progress}
+
+## Acceptance Criteria
+
+${draft.acceptanceCriteria}
+`;
+}
+
+function toWorkspaceRelativePath(rootPath: string, absolutePath: string): string {
+  const normalizedRoot = rootPath.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalizedPath = absolutePath.replaceAll("\\", "/");
+
+  return normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length + 1)
+    : normalizedPath;
 }
 
 function WorkspaceStatusItem(props: {

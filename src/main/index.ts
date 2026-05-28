@@ -37,10 +37,13 @@ import {
   readCurrentMemory,
   replaceMemoryWithDraft
 } from "../modules/memory";
+import { rebuildSearchIndex, searchWorkspace } from "../modules/search";
+import { saveConflictCopy, watchWorkspaceFiles } from "../modules/sync";
 import {
   createWorkspaceAccessDescription,
   createWorkspaceOperationNotAllowedResponse,
   isAllowedWorkspaceOperation,
+  workspaceExternalFileChangeChannel,
   workspaceIpcChannel,
   type IpcResponse,
   type InboxMutationResult,
@@ -58,6 +61,8 @@ import {
 } from "../modules/today-focus";
 import type {
   ArtifactInput,
+  ConflictCopyInput,
+  ConflictCopyResult,
   InboxItem,
   InboxItemInput,
   MemoryDocument,
@@ -66,14 +71,19 @@ import type {
   PromptOutputDraft,
   PromptPack,
   PromptPackBuildInput,
+  SearchQueryInput,
+  SearchResult,
   TaskInput,
   TaskUpdateInput,
   TodayFocusItem,
   TodayFocusOverrideAction,
+  WorkspaceExternalFileChange,
   WorkspaceState
 } from "../shared/domain";
 
 const rendererDevServerUrl = process.env.ELECTRON_RENDERER_URL;
+let stopWorkspaceWatcher: (() => void) | null = null;
+let watchedWorkspacePath: string | null = null;
 
 function createMainWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -123,6 +133,8 @@ async function resolveWorkspaceIpcRequest(
     | PromptOutputSaveResult
     | MemoryDocument
     | MemoryReplacementIpcResult
+    | SearchResult[]
+    | ConflictCopyResult
     | TodayFocusItem[]
     | InboxItem[]
   >
@@ -143,7 +155,7 @@ async function resolveWorkspaceIpcRequest(
       case "workspace.getCurrent":
         return {
           ok: true,
-          data: await getCurrentWorkspaceState({ settingsDirectory })
+          data: await readCurrentWorkspaceState(settingsDirectory)
         };
       case "workspace.selectExisting":
         return {
@@ -255,6 +267,22 @@ async function resolveWorkspaceIpcRequest(
             request.draft as MemoryDraft
           )
         };
+      case "workspace.search":
+        return {
+          ok: true,
+          data: await searchCurrentWorkspace(
+            settingsDirectory,
+            request.input as SearchQueryInput
+          )
+        };
+      case "workspace.saveConflictCopy":
+        return {
+          ok: true,
+          data: await saveConflictCopyForCurrentWorkspace(
+            settingsDirectory,
+            request.input as ConflictCopyInput
+          )
+        };
       case "workspace.getTodayFocus":
         return {
           ok: true,
@@ -340,6 +368,91 @@ async function resolveWorkspaceIpcRequest(
   }
 }
 
+async function readCurrentWorkspaceState(
+  settingsDirectory: string
+): Promise<WorkspaceState> {
+  const state = await getCurrentWorkspaceState({ settingsDirectory });
+
+  await rebuildSearchIndexForState(state);
+
+  return state;
+}
+
+async function openWorkspaceAndRefreshSearchIndex(
+  workspacePath: string,
+  settingsDirectory: string
+): Promise<WorkspaceState> {
+  const state = await openWorkspace(workspacePath, { settingsDirectory });
+
+  await rebuildSearchIndexForState(state);
+
+  return state;
+}
+
+async function createWorkspaceAndRefreshSearchIndex(
+  workspacePath: string,
+  settingsDirectory: string
+): Promise<WorkspaceState> {
+  const state = await createWorkspace(workspacePath, { settingsDirectory });
+
+  await rebuildSearchIndexForState(state);
+
+  return state;
+}
+
+async function rebuildSearchIndexForState(state: WorkspaceState): Promise<void> {
+  if (!state.current) {
+    stopWatchingWorkspaceFiles();
+    return;
+  }
+
+  watchWorkspaceFilesForRenderer(state.current.rootPath);
+
+  try {
+    await rebuildSearchIndex(state.current.rootPath);
+  } catch {
+    // Search is derived state. Workspace Markdown remains the source of truth.
+  }
+}
+
+async function saveConflictCopyForCurrentWorkspace(
+  settingsDirectory: string,
+  input: ConflictCopyInput
+): Promise<ConflictCopyResult> {
+  return saveConflictCopy(await requireCurrentWorkspacePath(settingsDirectory), input);
+}
+
+async function searchCurrentWorkspace(
+  settingsDirectory: string,
+  input: SearchQueryInput
+): Promise<SearchResult[]> {
+  return searchWorkspace(await requireCurrentWorkspacePath(settingsDirectory), input);
+}
+
+function watchWorkspaceFilesForRenderer(workspacePath: string): void {
+  if (watchedWorkspacePath === workspacePath) {
+    return;
+  }
+
+  stopWatchingWorkspaceFiles();
+  watchedWorkspacePath = workspacePath;
+  stopWorkspaceWatcher = watchWorkspaceFiles(workspacePath, (change) => {
+    sendExternalFileChange(change);
+  });
+}
+
+function stopWatchingWorkspaceFiles(): void {
+  stopWorkspaceWatcher?.();
+  stopWorkspaceWatcher = null;
+  watchedWorkspacePath = null;
+}
+
+function sendExternalFileChange(change: WorkspaceExternalFileChange): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(workspaceExternalFileChangeChannel, change);
+  }
+}
+
 async function buildPromptPackForCurrentWorkspace(
   settingsDirectory: string,
   input: PromptPackBuildInput
@@ -355,7 +468,7 @@ async function savePromptOutputAsLlmNoteForCurrentWorkspace(
   const note = await savePromptOutputAsLlmNote(workspacePath, draft);
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     note
   };
 }
@@ -375,7 +488,7 @@ async function replaceMemoryForCurrentWorkspace(
 
   return {
     ...result,
-    state: await getCurrentWorkspaceState({ settingsDirectory })
+    state: await readCurrentWorkspaceState(settingsDirectory)
   };
 }
 
@@ -492,7 +605,7 @@ async function createInboxMutationResult(
   ids: { itemId?: string; projectId?: string; taskId?: string }
 ): Promise<InboxMutationResult> {
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     inboxItems: await readInboxItems(workspacePath),
     itemId: ids.itemId,
     projectId: ids.projectId,
@@ -508,7 +621,7 @@ async function createProjectForCurrentWorkspace(
   const project = await createProject(workspacePath, input);
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId: project.id
   };
 }
@@ -521,7 +634,7 @@ async function updateProjectForCurrentWorkspace(
   await updateProject(await requireCurrentWorkspacePath(settingsDirectory), projectId, input);
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId
   };
 }
@@ -533,7 +646,7 @@ async function archiveProjectForCurrentWorkspace(
   await archiveProject(await requireCurrentWorkspacePath(settingsDirectory), projectId);
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId
   };
 }
@@ -550,7 +663,7 @@ async function createTaskForCurrentWorkspace(
   );
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId,
     taskId: task.id
   };
@@ -570,7 +683,7 @@ async function updateTaskForCurrentWorkspace(
   );
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId,
     taskId
   };
@@ -590,7 +703,7 @@ async function addTaskArtifactForCurrentWorkspace(
   );
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId,
     taskId,
     artifactId: artifact.id
@@ -621,7 +734,7 @@ async function updateProjectJournalForCurrentWorkspace(
   );
 
   return {
-    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    state: await readCurrentWorkspaceState(settingsDirectory),
     projectId
   };
 }
@@ -676,13 +789,16 @@ async function selectExistingWorkspace(
   if (result.canceled || !result.filePaths[0]) {
     return {
       canceled: true,
-      state: await getCurrentWorkspaceState({ settingsDirectory })
+      state: await readCurrentWorkspaceState(settingsDirectory)
     };
   }
 
   return {
     canceled: false,
-    state: await openWorkspace(result.filePaths[0], { settingsDirectory })
+    state: await openWorkspaceAndRefreshSearchIndex(
+      result.filePaths[0],
+      settingsDirectory
+    )
   };
 }
 
@@ -698,13 +814,16 @@ async function createNewWorkspace(
   if (result.canceled || !result.filePaths[0]) {
     return {
       canceled: true,
-      state: await getCurrentWorkspaceState({ settingsDirectory })
+      state: await readCurrentWorkspaceState(settingsDirectory)
     };
   }
 
   return {
     canceled: false,
-    state: await createWorkspace(result.filePaths[0], { settingsDirectory })
+    state: await createWorkspaceAndRefreshSearchIndex(
+      result.filePaths[0],
+      settingsDirectory
+    )
   };
 }
 

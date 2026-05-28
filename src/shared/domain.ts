@@ -252,3 +252,102 @@ export type MemoryReplacementResult = {
   current: MemoryDocument;
   archiveRelativePath: string;
 };
+
+export type SearchResultTarget =
+  | {
+      kind: "project";
+      projectId: string;
+      relativePath: string;
+    }
+  | {
+      kind: "task";
+      projectId: string;
+      taskId: string;
+      relativePath: string;
+    }
+  | {
+      kind: "inbox";
+      inboxItemId: string;
+      relativePath: "inbox.md";
+    }
+  | {
+      kind: "artifact";
+      projectId: string;
+      taskId: string;
+      artifactId: string;
+      relativePath: string;
+    }
+  | {
+      kind: "llm-note";
+      projectId: string | null;
+      taskId: string | null;
+      relativePath: string;
+    };
+
+export type SearchResult = {
+  id: string;
+  title: string;
+  preview: string;
+  relativePath: string;
+  target: SearchResultTarget;
+  score: number;
+};
+
+export type SearchQueryInput = {
+  query: string;
+};
+
+export type SearchIndexSummary = {
+  relativePath: string;
+  entryCount: number;
+  rebuiltAt: string;
+};
+
+export type WorkspaceExternalFileChangeKind =
+  | "created"
+  | "modified"
+  | "deleted";
+
+export type WorkspaceExternalFileChange = {
+  relativePath: string;
+  kind: WorkspaceExternalFileChangeKind;
+  detectedAt: string;
+};
+
+export type WorkspaceFileSnapshotEntry = {
+  relativePath: string;
+  hash: string;
+  modifiedTimeMs: number;
+};
+
+export type WorkspaceFileSnapshot = {
+  rootPath: string;
+  capturedAt: string;
+  files: WorkspaceFileSnapshotEntry[];
+};
+
+export type FileConflictResolutionAction =
+  | "reload_from_disk"
+  | "keep_current_draft"
+  | "save_as_conflict_copy";
+
+export type FileConflictResolutionInput = {
+  relativePath: string;
+  action: FileConflictResolutionAction;
+  draftSource: string;
+};
+
+export type FileConflictResolutionResult = {
+  action: FileConflictResolutionAction;
+  relativePath: string;
+  source: string;
+};
+
+export type ConflictCopyInput = {
+  relativePath: string;
+  draftSource: string;
+};
+
+export type ConflictCopyResult = {
+  relativePath: string;
+};
