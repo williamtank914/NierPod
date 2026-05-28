@@ -1,6 +1,6 @@
 # Project lifecycle and task timeline
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: AFK
 
 ## Parent
@@ -15,15 +15,26 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] 用户可以创建 Project，并填写 title、goal、success criteria、status 和可选 deadline。
-- [ ] 用户可以编辑 Project title、goal、success criteria、status 和 deadline。
-- [ ] 用户可以 archive Project，归档后不再作为 active Project 展示。
-- [ ] Project 数据持久化为人类可读 Markdown。
-- [ ] 用户可以在 Project 中创建基础 Task title，并在 Project timeline 中看到该 Task。
-- [ ] Project 的 Task order 由 Project Markdown 持久化，应用重启后保持一致。
-- [ ] 有测试覆盖 Project Markdown round-trip、Project 创建/编辑/归档、基础 Task timeline 恢复。
+- [x] 用户可以创建 Project，并填写 title、goal、success criteria、status 和可选 deadline。
+- [x] 用户可以编辑 Project title、goal、success criteria、status 和 deadline。
+- [x] 用户可以 archive Project，归档后不再作为 active Project 展示。
+- [x] Project 数据持久化为人类可读 Markdown。
+- [x] 用户可以在 Project 中创建基础 Task title，并在 Project timeline 中看到该 Task。
+- [x] Project 的 Task order 由 Project Markdown 持久化，应用重启后保持一致。
+- [x] 有测试覆盖 Project Markdown round-trip、Project 创建/编辑/归档、基础 Task timeline 恢复。
+
+## Implementation notes
+
+- `src/modules/workspace/` 增加 Project 创建、编辑、归档、Task 创建和 workspace model 重建接口。
+- `src/modules/markdown/` 增加 Project Markdown 解析/序列化，Project frontmatter 保存稳定 id、status、deadline 和 task order。
+- renderer 三栏 workbench 增加 New Project 表单、Project 列表、New Task 表单和 timeline task 入口。
+- `src/modules/journal/` 追加 Project/Task lifecycle 的人类可读事件 hook。
+
+## Verification
+
+- `pnpm exec tsx --test tests/project-task-lifecycle.test.ts`
+- `pnpm exec tsx --test tests/renderer-workbench.test.ts`
 
 ## Blocked by
 
 - `.scratch/nierpod-phase-1/issues/01-workspace-lifecycle-markdown-source.md`
-

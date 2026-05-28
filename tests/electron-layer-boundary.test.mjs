@@ -30,11 +30,13 @@ async function collectFiles(directory, extensionPattern) {
   return files;
 }
 
-test("main process registers the allowlisted file capability IPC handler", async () => {
+test("main process registers the allowlisted workspace IPC handler", async () => {
   const mainSource = await readProjectFile("src/main/index.ts");
 
-  assert.match(mainSource, /ipcMain\.handle\(\s*fileIpcChannel/);
-  assert.match(mainSource, /resolveFileCapabilityRequest/);
+  assert.match(mainSource, /ipcMain\.handle\(\s*workspaceIpcChannel/);
+  assert.match(mainSource, /isAllowedWorkspaceOperation/);
+  assert.match(mainSource, /openWorkspace/);
+  assert.match(mainSource, /createWorkspace/);
 });
 
 test("preload exposes a typed NierPod bridge instead of Electron primitives", async () => {
@@ -42,7 +44,7 @@ test("preload exposes a typed NierPod bridge instead of Electron primitives", as
 
   assert.match(preloadSource, /contextBridge\.exposeInMainWorld\("nierpod"/);
   assert.match(preloadSource, /workspace/);
-  assert.match(preloadSource, /ipcRenderer\.invoke\(fileIpcChannel/);
+  assert.match(preloadSource, /ipcRenderer\.invoke\(workspaceIpcChannel/);
   assert.doesNotMatch(preloadSource, /exposeInMainWorld\("electron"/);
   assert.doesNotMatch(preloadSource, /exposeInMainWorld\("ipcRenderer"/);
 });

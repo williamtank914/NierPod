@@ -1,25 +1,34 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  fileIpcChannel,
-  resolveFileCapabilityRequest
+  createWorkspaceAccessDescription,
+  createWorkspaceOperationNotAllowedResponse,
+  isAllowedWorkspaceOperation,
+  workspaceIpcChannel,
+  workspaceOperations
 } from "../src/shared/ipc";
 
-test("file capability IPC exposes only allowlisted Phase 0 operations", () => {
-  assert.equal(fileIpcChannel, "nierpod:file-capability");
+test("workspace IPC exposes only allowlisted Phase 1 operations", () => {
+  assert.equal(workspaceIpcChannel, "nierpod:workspace");
+  assert.deepEqual([...workspaceOperations], [
+    "workspace.describeAccess",
+    "workspace.getCurrent",
+    "workspace.selectExisting",
+    "workspace.createNew",
+    "workspace.createProject",
+    "workspace.updateProject",
+    "workspace.archiveProject",
+    "workspace.createTask",
+    "workspace.updateTask"
+  ]);
 
-  const response = resolveFileCapabilityRequest({
-    operation: "workspace.describeAccess"
-  });
-
-  assert.equal(response.ok, true);
-  assert.equal(response.data.phase, "phase-0");
-  assert.equal(response.data.canReadFiles, false);
-  assert.equal(response.data.canWriteFiles, false);
+  for (const operation of workspaceOperations) {
+    assert.equal(isAllowedWorkspaceOperation(operation), true, operation);
+  }
 });
 
-test("file capability IPC rejects arbitrary file operations with a stable error shape", () => {
-  const response = resolveFileCapabilityRequest({
+test("workspace IPC rejects arbitrary file operations with a stable error shape", () => {
+  const response = createWorkspaceOperationNotAllowedResponse({
     operation: "workspace.readFile",
     path: "/tmp/nierpod.md"
   });
@@ -28,4 +37,14 @@ test("file capability IPC rejects arbitrary file operations with a stable error 
   assert.equal(response.error.code, "operation_not_allowed");
   assert.equal(typeof response.error.message, "string");
   assert.equal(response.error.details?.operation, "workspace.readFile");
+});
+
+test("workspace access description keeps file access behind the typed bridge", () => {
+  const description = createWorkspaceAccessDescription();
+
+  assert.equal(description.phase, "phase-1");
+  assert.equal(description.canReadFiles, true);
+  assert.equal(description.canWriteFiles, true);
+  assert.match(description.message, /allowlisted main-process IPC/);
+  assert.match(description.message, /Markdown files/);
 });

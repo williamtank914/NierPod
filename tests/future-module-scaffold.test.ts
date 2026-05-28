@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { futureModuleBoundaries } from "../src/modules";
 
-test("Phase 1 module boundaries are explicit placeholders, not fake behavior", () => {
+test("Phase 1 module boundaries advertise implemented and placeholder modules", () => {
   const modulesByName = new Map(
     futureModuleBoundaries.map((moduleBoundary) => [
       moduleBoundary.name,
@@ -11,22 +11,36 @@ test("Phase 1 module boundaries are explicit placeholders, not fake behavior", (
     ])
   );
 
-  for (const name of [
-    "Workspace management",
-    "Project domain",
-    "Task domain",
-    "Markdown parser",
-    "Search index",
-    "Prompt Pack workflow",
-    "Journal",
-    "Memory",
-    "Artifact registry"
-  ]) {
+  const expectedModuleStates = new Map([
+    ["Workspace management", { phase: "phase-1", status: "implemented" }],
+    [
+      "Project domain",
+      { phase: "phase-1-placeholder", status: "not-implemented" }
+    ],
+    ["Task domain", { phase: "phase-1-placeholder", status: "not-implemented" }],
+    [
+      "Markdown parser",
+      { phase: "phase-1", status: "implemented" }
+    ],
+    ["Search index", { phase: "phase-1-placeholder", status: "not-implemented" }],
+    [
+      "Prompt Pack workflow",
+      { phase: "phase-1-placeholder", status: "not-implemented" }
+    ],
+    ["Journal", { phase: "phase-1", status: "implemented" }],
+    ["Memory", { phase: "phase-1-placeholder", status: "not-implemented" }],
+    [
+      "Artifact registry",
+      { phase: "phase-1-placeholder", status: "not-implemented" }
+    ]
+  ]);
+
+  for (const [name, expected] of expectedModuleStates) {
     const moduleBoundary = modulesByName.get(name);
 
     assert.ok(moduleBoundary, `${name} boundary is missing`);
-    assert.equal(moduleBoundary.phase, "phase-1-placeholder");
-    assert.equal(moduleBoundary.status, "not-implemented");
+    assert.equal(moduleBoundary.phase, expected.phase);
+    assert.equal(moduleBoundary.status, expected.status);
     assert.match(moduleBoundary.extendsFrom, /^src\//);
   }
 });

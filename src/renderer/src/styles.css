@@ -131,19 +131,62 @@ p {
   margin-bottom: 0;
 }
 
+.workspace-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .workspace-button {
   width: 100%;
   min-height: 36px;
   border: 1px solid #bbc5c0;
   border-radius: 7px;
-  background: #edf1ef;
+  background: #ffffff;
   color: #49524d;
+  cursor: pointer;
   font-weight: 700;
+}
+
+.workspace-button.primary {
+  border-color: #252a28;
+  background: #252a28;
+  color: #f7f9f8;
 }
 
 .workspace-button:disabled {
   cursor: not-allowed;
-  opacity: 1;
+  opacity: 0.62;
+}
+
+.workspace-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #dfe4e1;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.workspace-facts div {
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-facts dt {
+  color: #667067;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workspace-facts dd {
+  margin: 0;
+  color: #252a28;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .nav-stack {
@@ -169,6 +212,112 @@ p {
   color: #4a544f;
   font-size: 13px;
   font-weight: 600;
+}
+
+.nav-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid #cfd7d3;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #252a28;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.form-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.form-stack label,
+.inline-form label,
+.todo-editor label {
+  display: grid;
+  gap: 5px;
+  color: #59645e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.form-stack input,
+.form-stack textarea,
+.form-stack select,
+.inline-form input,
+.todo-editor input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #ccd5d0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #252a28;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.form-stack input,
+.form-stack select,
+.inline-form input,
+.todo-editor input {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.form-stack textarea {
+  min-height: 72px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #dfe4e1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.inline-form h3 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.inline-form .workspace-button {
+  min-width: 126px;
+}
+
+.timeline-task {
+  display: grid;
+  gap: 4px;
+  min-height: 68px;
+  padding: 13px 15px;
+  border: 1px solid #cfd8d2;
+  border-left: 4px solid #7a8f85;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #252a28;
+  cursor: pointer;
+  text-align: left;
+}
+
+.timeline-task span {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.timeline-task small {
+  color: #8b6f42;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .timeline-panel {
@@ -228,10 +377,81 @@ p {
   margin-bottom: 0;
 }
 
+.detail-section code {
+  color: #2f4138;
+  overflow-wrap: anywhere;
+}
+
 .detail-section.split {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.todo-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.todo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.todo-editor .todo-row {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 7px 9px;
+  border: 1px solid #edf0ee;
+  border-radius: 7px;
+  background: #f7f9f8;
+  color: #252a28;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.todo-editor .todo-row input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
+  accent-color: #252a28;
+}
+
+.markdown-file-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.markdown-file-list li {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #edf0ee;
+}
+
+.markdown-file-list li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.markdown-file-list span {
+  color: #252a28;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.markdown-file-list code {
+  color: #5f6c65;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .bridge-copy {
@@ -254,6 +474,12 @@ p {
 
 @media (max-width: 760px) {
   .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-actions,
+  .detail-section.split,
+  .inline-form {
     grid-template-columns: 1fr;
   }
 

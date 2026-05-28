@@ -1,28 +1,364 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  ProjectInput,
+  ProjectStatus,
+  TaskLane,
+  TaskPriority,
+  TaskStatus,
+  TaskTodoInput,
+  WorkspaceMarkdownFile,
+  WorkspaceState
+} from "../../shared/domain";
+import type {
+  IpcResponse,
+  WorkspaceActionResult,
+  WorkspaceMutationResult
+} from "../../shared/ipc";
+
+type WorkspaceAction = "select" | "create";
+
+type ProjectDraft = {
+  title: string;
+  goal: string;
+  successCriteria: string;
+  status: ProjectStatus;
+  deadline: string;
+};
+
+type TaskDraft = {
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  lane: TaskLane;
+  dueDate: string;
+  dependencies: string;
+  context: string;
+  todos: TaskTodoInput[];
+  progress: string;
+  acceptanceCriteria: string;
+  newTodo: string;
+};
+
+const emptyProjectDraft: ProjectDraft = {
+  title: "",
+  goal: "",
+  successCriteria: "",
+  status: "active",
+  deadline: ""
+};
+
+const emptyTaskDraft: TaskDraft = {
+  title: "",
+  status: "backlog",
+  priority: "p2",
+  lane: "main",
+  dueDate: "",
+  dependencies: "",
+  context: "",
+  todos: [],
+  progress: "",
+  acceptanceCriteria: "",
+  newTodo: ""
+};
+
+const fallbackWorkspaceState: WorkspaceState = {
+  phase: "phase-1",
+  settings: {
+    storage: "app-user-data",
+    settingsFilePath: "Unavailable"
+  },
+  current: null,
+  message:
+    "NierPod bridge is unavailable. Workspace file access cannot run in this renderer."
+};
 
 export function App() {
   const bridgeName = window.nierpod?.appName ?? "NierPod";
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(
+    fallbackWorkspaceState
+  );
   const [workspaceAccess, setWorkspaceAccess] = useState(
-    "Workspace bridge pending."
+    "Checking workspace bridge."
+  );
+  const [busyAction, setBusyAction] = useState<WorkspaceAction | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [projectDraft, setProjectDraft] =
+    useState<ProjectDraft>(emptyProjectDraft);
+  const [projectEditDraft, setProjectEditDraft] =
+    useState<ProjectDraft>(emptyProjectDraft);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyTaskDraft);
+  const workspace = workspaceState.current;
+  const projects = workspace?.activeProjects ?? [];
+  const selectedProject =
+    projects.find((project) => project.id === selectedProjectId) ?? null;
+  const selectedTask =
+    selectedProject?.tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const requiredFiles = useMemo(
+    () =>
+      workspace?.markdownFiles.filter((markdownFile) => markdownFile.required) ??
+      [],
+    [workspace]
+  );
+  const optionalMarkdownFiles = useMemo(
+    () =>
+      workspace?.markdownFiles.filter((markdownFile) => !markdownFile.required) ??
+      [],
+    [workspace]
   );
 
   useEffect(() => {
     let isCurrent = true;
 
-    void window.nierpod?.workspace.describeAccess().then((response) => {
+    async function loadWorkspace() {
+      const bridge = window.nierpod;
+
+      if (!bridge) {
+        return;
+      }
+
+      const [accessResponse, stateResponse] = await Promise.all([
+        bridge.workspace.describeAccess(),
+        bridge.workspace.getCurrent()
+      ]);
+
       if (!isCurrent) {
         return;
       }
 
       setWorkspaceAccess(
-        response.ok ? response.data.message : response.error.message
+        accessResponse.ok ? accessResponse.data.message : accessResponse.error.message
       );
-    });
+      applyWorkspaceStateResponse(stateResponse);
+    }
+
+    void loadWorkspace();
 
     return () => {
       isCurrent = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!workspace) {
+      setSelectedProjectId(null);
+      setSelectedTaskId(null);
+      return;
+    }
+
+    if (
+      selectedProjectId &&
+      workspace.activeProjects.some((project) => project.id === selectedProjectId)
+    ) {
+      return;
+    }
+
+    setSelectedProjectId(workspace.activeProjects[0]?.id ?? null);
+    setSelectedTaskId(null);
+  }, [selectedProjectId, workspace]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      setProjectEditDraft(emptyProjectDraft);
+      return;
+    }
+
+    setProjectEditDraft({
+      title: selectedProject.title,
+      goal: selectedProject.goal,
+      successCriteria: selectedProject.successCriteria,
+      status: selectedProject.status,
+      deadline: selectedProject.deadline ?? ""
+    });
+  }, [selectedProject]);
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setTaskDraft(emptyTaskDraft);
+      return;
+    }
+
+    setTaskDraft({
+      title: selectedTask.title,
+      status: selectedTask.status,
+      priority: selectedTask.priority,
+      lane: selectedTask.lane,
+      dueDate: selectedTask.dueDate ?? "",
+      dependencies: selectedTask.dependencies.join(", "),
+      context: selectedTask.context,
+      todos: selectedTask.todos.map((todo) => ({
+        text: todo.text,
+        completed: todo.completed
+      })),
+      progress: selectedTask.progress,
+      acceptanceCriteria: selectedTask.acceptanceCriteria,
+      newTodo: ""
+    });
+  }, [selectedTask]);
+
+  async function runWorkspaceAction(action: WorkspaceAction) {
+    const bridge = window.nierpod;
+
+    if (!bridge || busyAction) {
+      return;
+    }
+
+    setBusyAction(action);
+
+    const response =
+      action === "select"
+        ? await bridge.workspace.selectExisting()
+        : await bridge.workspace.createNew();
+
+    applyWorkspaceActionResponse(response);
+    setBusyAction(null);
+  }
+
+  async function createProjectFromDraft() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !workspace || !projectDraft.title.trim()) {
+      return;
+    }
+
+    const response = await bridge.workspace.createProject(toProjectInput(projectDraft));
+    applyWorkspaceMutationResponse(response);
+
+    if (response.ok) {
+      setSelectedProjectId(response.data.projectId ?? null);
+      setProjectDraft(emptyProjectDraft);
+    }
+  }
+
+  async function saveProject() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject) {
+      return;
+    }
+
+    applyWorkspaceMutationResponse(
+      await bridge.workspace.updateProject(
+        selectedProject.id,
+        toProjectInput(projectEditDraft)
+      )
+    );
+  }
+
+  async function archiveSelectedProject() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject) {
+      return;
+    }
+
+    applyWorkspaceMutationResponse(
+      await bridge.workspace.archiveProject(selectedProject.id)
+    );
+  }
+
+  async function createTaskFromTitle() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject || !taskTitle.trim()) {
+      return;
+    }
+
+    const response = await bridge.workspace.createTask(selectedProject.id, {
+      title: taskTitle.trim()
+    });
+    applyWorkspaceMutationResponse(response);
+
+    if (response.ok) {
+      setSelectedProjectId(response.data.projectId ?? selectedProject.id);
+      setSelectedTaskId(response.data.taskId ?? null);
+      setTaskTitle("");
+    }
+  }
+
+  async function saveTask() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject || !selectedTask) {
+      return;
+    }
+
+    const response = await bridge.workspace.updateTask(
+      selectedProject.id,
+      selectedTask.id,
+      {
+        title: taskDraft.title,
+        status: taskDraft.status,
+        priority: taskDraft.priority,
+        lane: taskDraft.lane,
+        dueDate: taskDraft.dueDate || null,
+        dependencies: readDependencyInput(taskDraft.dependencies),
+        context: taskDraft.context,
+        todos: taskDraft.todos,
+        progress: taskDraft.progress,
+        acceptanceCriteria: taskDraft.acceptanceCriteria
+      }
+    );
+
+    applyWorkspaceMutationResponse(response);
+
+    if (response.ok) {
+      setSelectedProjectId(response.data.projectId ?? selectedProject.id);
+      setSelectedTaskId(response.data.taskId ?? selectedTask.id);
+    }
+  }
+
+  function addTodo() {
+    const text = taskDraft.newTodo.trim();
+
+    if (!text) {
+      return;
+    }
+
+    setTaskDraft({
+      ...taskDraft,
+      todos: [...taskDraft.todos, { text, completed: false }],
+      newTodo: ""
+    });
+  }
+
+  function applyWorkspaceStateResponse(response: IpcResponse<WorkspaceState>) {
+    setWorkspaceState(
+      response.ok
+        ? response.data
+        : {
+            ...fallbackWorkspaceState,
+            message: response.error.message
+          }
+    );
+  }
+
+  function applyWorkspaceActionResponse(
+    response: IpcResponse<WorkspaceActionResult>
+  ) {
+    setWorkspaceState(
+      response.ok
+        ? response.data.state
+        : {
+            ...fallbackWorkspaceState,
+            message: response.error.message
+          }
+    );
+  }
+
+  function applyWorkspaceMutationResponse(
+    response: IpcResponse<WorkspaceMutationResult>
+  ) {
+    setWorkspaceState(
+      response.ok
+        ? response.data.state
+        : {
+            ...fallbackWorkspaceState,
+            message: response.error.message
+          }
+    );
+  }
 
   return (
     <main className="app-shell" aria-label="NierPod workbench">
@@ -32,7 +368,7 @@ export function App() {
             NP
           </div>
           <div>
-            <p className="eyebrow">Phase 0</p>
+            <p className="eyebrow">Phase 1</p>
             <h1 id="app-title">{bridgeName}</h1>
           </div>
         </div>
@@ -40,30 +376,97 @@ export function App() {
         <section className="workspace-entry" aria-labelledby="workspace-title">
           <div>
             <h2 id="workspace-title">Workspace</h2>
-            <p>Phase 0 will not create or modify workspace files.</p>
+            <p>{workspaceState.message}</p>
           </div>
-          <button
-            className="workspace-button"
-            type="button"
-            aria-label="Select workspace placeholder"
-            disabled
-          >
-            Select workspace
-          </button>
+
+          <div className="workspace-actions">
+            <button
+              className="workspace-button"
+              type="button"
+              onClick={() => void runWorkspaceAction("select")}
+              disabled={busyAction !== null}
+            >
+              {busyAction === "select" ? "Opening..." : "Open Folder"}
+            </button>
+            <button
+              className="workspace-button primary"
+              type="button"
+              onClick={() => void runWorkspaceAction("create")}
+              disabled={busyAction !== null}
+            >
+              {busyAction === "create" ? "Creating..." : "Create Workspace"}
+            </button>
+          </div>
+
+          {workspace ? (
+            <dl className="workspace-facts">
+              <div>
+                <dt>Current</dt>
+                <dd>{workspace.title}</dd>
+              </div>
+              <div>
+                <dt>Path</dt>
+                <dd>{workspace.rootPath}</dd>
+              </div>
+              <div>
+                <dt>Markdown</dt>
+                <dd>{workspace.markdownFiles.length} files</dd>
+              </div>
+            </dl>
+          ) : null}
+
           <p className="bridge-copy">{workspaceAccess}</p>
         </section>
 
+        {workspace ? (
+          <section className="workspace-entry" aria-labelledby="project-form-title">
+            <h2 id="project-form-title">New Project</h2>
+            <ProjectDraftFields
+              draft={projectDraft}
+              labels={{
+                title: "Project title",
+                goal: "Project goal",
+                successCriteria: "Success criteria",
+                status: "Project status",
+                deadline: "Project deadline"
+              }}
+              onChange={setProjectDraft}
+            />
+            <button
+              className="workspace-button primary"
+              type="button"
+              onClick={() => void createProjectFromDraft()}
+            >
+              Create Project
+            </button>
+          </section>
+        ) : null}
+
         <section aria-labelledby="navigation-title">
-          <h2 id="navigation-title">Focus areas</h2>
+          <h2 id="navigation-title">Projects</h2>
           <div className="nav-stack">
-            <a href="#today-focus">Today Focus</a>
-            <a href="#inbox">Inbox</a>
-            <a href="#projects">Projects</a>
+            {projects.length > 0 ? (
+              projects.map((project) => (
+                <button
+                  className="nav-button"
+                  type="button"
+                  key={project.id}
+                  onClick={() => {
+                    setSelectedProjectId(project.id);
+                    setSelectedTaskId(project.tasks[0]?.id ?? null);
+                  }}
+                >
+                  {project.title}
+                </button>
+              ))
+            ) : (
+              <p>No active Projects.</p>
+            )}
           </div>
         </section>
 
         <section aria-labelledby="context-title">
-          <h2 id="context-title">Context</h2>
+          <h2 id="context-title">Workspace Context</h2>
           <div className="nav-stack compact">
             <a href="#memory">Memory</a>
             <a href="#prompt-pack">Prompt Pack</a>
@@ -77,25 +480,82 @@ export function App() {
         id="task-timeline"
       >
         <div className="panel-header">
-          <p className="eyebrow">Project execution</p>
-          <h2>Task timeline</h2>
+          <p className="eyebrow">Task timeline</p>
+          <h2>{selectedProject?.title ?? "Workspace Status"}</h2>
         </div>
 
-        <div className="timeline-empty">
-          <div className="timeline-rail" aria-hidden="true" />
-          <div>
-            <h3 id="today-focus">Today Focus</h3>
-            <p>No workspace selected.</p>
+        {selectedProject ? (
+          <>
+            <section className="inline-form" aria-labelledby="task-form-title">
+              <h3 id="task-form-title">New Task</h3>
+              <label>
+                <span>Task title</span>
+                <input
+                  value={taskTitle}
+                  onInput={(event) => setTaskTitle(event.currentTarget.value)}
+                />
+              </label>
+              <button
+                className="workspace-button primary"
+                type="button"
+                onClick={() => void createTaskFromTitle()}
+              >
+                Create Task
+              </button>
+            </section>
+            <div className="timeline-empty">
+              <div className="timeline-rail" aria-hidden="true" />
+              {selectedProject.tasks.length > 0 ? (
+                selectedProject.tasks.map((task) => (
+                  <button
+                    className="timeline-task"
+                    key={task.id}
+                    type="button"
+                    aria-label={task.title}
+                    onClick={() => setSelectedTaskId(task.id)}
+                  >
+                    <span>{task.title}</span>
+                    <small>{task.status}</small>
+                  </button>
+                ))
+              ) : (
+                <WorkspaceStatusItem
+                  title="Projects"
+                  id="projects"
+                  copy="0 Tasks in this Project."
+                />
+              )}
+            </div>
+          </>
+        ) : workspace ? (
+          <div className="timeline-empty">
+            <div className="timeline-rail" aria-hidden="true" />
+            <WorkspaceStatusItem
+              title="Projects"
+              id="projects"
+              copy={`${workspace.projectCount} Project Markdown files found.`}
+            />
           </div>
-          <div>
-            <h3 id="inbox">Inbox</h3>
-            <p>Inbox capture is reserved for Phase 1.</p>
+        ) : (
+          <div className="timeline-empty">
+            <div className="timeline-rail" aria-hidden="true" />
+            <WorkspaceStatusItem
+              title="Today Focus"
+              id="today-focus"
+              copy="No workspace selected."
+            />
+            <WorkspaceStatusItem
+              title="Inbox"
+              id="inbox"
+              copy="Create or open a workspace to load the Markdown inbox."
+            />
+            <WorkspaceStatusItem
+              title="Projects"
+              id="projects"
+              copy="Project and Task state will be reconstructed from Markdown."
+            />
           </div>
-          <div>
-            <h3 id="projects">Projects</h3>
-            <p>Project and Task data are not loaded in Phase 0.</p>
-          </div>
-        </div>
+        )}
       </section>
 
       <aside
@@ -104,36 +564,386 @@ export function App() {
         id="task-detail"
       >
         <div className="panel-header">
-          <p className="eyebrow">Selected Task</p>
-          <h2>Task detail</h2>
+          <p className="eyebrow">Source of truth</p>
+          <h2>{selectedTask ? "Task detail" : "Markdown Files"}</h2>
         </div>
 
-        <section className="detail-section" aria-labelledby="notes-title">
-          <h3 id="notes-title">Notes</h3>
-          <p>No Task selected.</p>
-        </section>
+        {selectedTask ? (
+          <TaskDetailEditor
+            draft={taskDraft}
+            onChange={setTaskDraft}
+            onAddTodo={addTodo}
+            onSave={() => void saveTask()}
+          />
+        ) : selectedProject ? (
+          <section className="detail-section" aria-labelledby="project-edit-title">
+            <h3 id="project-edit-title">Project Detail</h3>
+            <ProjectDraftFields
+              draft={projectEditDraft}
+              labels={{
+                title: "Selected project title",
+                goal: "Selected project goal",
+                successCriteria: "Selected success criteria",
+                status: "Selected project status",
+                deadline: "Selected project deadline"
+              }}
+              onChange={setProjectEditDraft}
+            />
+            <div className="workspace-actions">
+              <button
+                className="workspace-button primary"
+                type="button"
+                onClick={() => void saveProject()}
+              >
+                Save Project
+              </button>
+              <button
+                className="workspace-button"
+                type="button"
+                onClick={() => void archiveSelectedProject()}
+              >
+                Archive Project
+              </button>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section className="detail-section" aria-labelledby="required-title">
+              <h3 id="required-title">Required Files</h3>
+              {requiredFiles.length > 0 ? (
+                <MarkdownFileList files={requiredFiles} />
+              ) : (
+                <p>No workspace files loaded.</p>
+              )}
+            </section>
 
-        <section className="detail-section" aria-labelledby="criteria-title">
-          <h3 id="criteria-title">Acceptance Criteria</h3>
-          <p>Acceptance Criteria will appear with real Task data.</p>
-        </section>
+            <section className="detail-section" aria-labelledby="optional-title">
+              <h3 id="optional-title">Additional Markdown</h3>
+              {optionalMarkdownFiles.length > 0 ? (
+                <MarkdownFileList files={optionalMarkdownFiles} />
+              ) : (
+                <p>No additional Markdown files found.</p>
+              )}
+            </section>
+          </>
+        )}
 
-        <section className="detail-section" aria-labelledby="artifacts-title">
-          <h3 id="artifacts-title">Artifacts</h3>
-          <p>Artifacts are reserved for local files and URLs in Phase 1.</p>
+        <section className="detail-section" aria-labelledby="settings-title">
+          <h3 id="settings-title">Settings Isolation</h3>
+          <p>
+            App settings are stored outside the workspace at{" "}
+            <code>{workspaceState.settings.settingsFilePath}</code>.
+          </p>
         </section>
 
         <section className="detail-section split" aria-label="LLM context">
           <div>
             <h3 id="memory">Memory</h3>
-            <p>Long-term summary placeholder.</p>
+            <p>
+              Memory will load from <code>memory.md</code>.
+            </p>
           </div>
           <div>
             <h3 id="prompt-pack">Prompt Pack</h3>
-            <p>Manual LLM workflow placeholder.</p>
+            <p>Prompt Pack will use reviewed Markdown context.</p>
           </div>
         </section>
       </aside>
     </main>
+  );
+}
+
+function ProjectDraftFields(props: {
+  draft: ProjectDraft;
+  labels: {
+    title: string;
+    goal: string;
+    successCriteria: string;
+    status: string;
+    deadline: string;
+  };
+  onChange: (draft: ProjectDraft) => void;
+}) {
+  return (
+    <div className="form-stack">
+      <label>
+        <span>{props.labels.title}</span>
+        <input
+          value={props.draft.title}
+          onInput={(event) =>
+            props.onChange({ ...props.draft, title: event.currentTarget.value })
+          }
+        />
+      </label>
+      <label>
+        <span>{props.labels.goal}</span>
+        <textarea
+          rows={2}
+          value={props.draft.goal}
+          onInput={(event) =>
+            props.onChange({ ...props.draft, goal: event.currentTarget.value })
+          }
+        />
+      </label>
+      <label>
+        <span>{props.labels.successCriteria}</span>
+        <textarea
+          rows={3}
+          value={props.draft.successCriteria}
+          onInput={(event) =>
+            props.onChange({
+              ...props.draft,
+              successCriteria: event.currentTarget.value
+            })
+          }
+        />
+      </label>
+      <label>
+        <span>{props.labels.status}</span>
+        <select
+          value={props.draft.status}
+          onInput={(event) =>
+            props.onChange({
+              ...props.draft,
+              status: event.currentTarget.value as ProjectStatus
+            })
+          }
+        >
+          <option value="active">active</option>
+          <option value="archived">archived</option>
+        </select>
+      </label>
+      <label>
+        <span>{props.labels.deadline}</span>
+        <input
+          type="date"
+          value={props.draft.deadline}
+          onInput={(event) =>
+            props.onChange({ ...props.draft, deadline: event.currentTarget.value })
+          }
+        />
+      </label>
+    </div>
+  );
+}
+
+function TaskDetailEditor(props: {
+  draft: TaskDraft;
+  onChange: (draft: TaskDraft) => void;
+  onAddTodo: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="detail-section" aria-labelledby="task-detail-title">
+      <h3 id="task-detail-title">Task Fields</h3>
+      <div className="form-stack">
+        <label>
+          <span>Selected task title</span>
+          <input
+            value={props.draft.title}
+            onInput={(event) =>
+              props.onChange({ ...props.draft, title: event.currentTarget.value })
+            }
+          />
+        </label>
+        <label>
+          <span>Task status</span>
+          <select
+            value={props.draft.status}
+            onInput={(event) =>
+              props.onChange({
+                ...props.draft,
+                status: event.currentTarget.value as TaskStatus
+              })
+            }
+          >
+            {["backlog", "ready", "in_progress", "blocked", "done", "archived"].map(
+              (status) => (
+                <option value={status} key={status}>
+                  {status}
+                </option>
+              )
+            )}
+          </select>
+        </label>
+        <label>
+          <span>Priority</span>
+          <select
+            value={props.draft.priority}
+            onInput={(event) =>
+              props.onChange({
+                ...props.draft,
+                priority: event.currentTarget.value as TaskPriority
+              })
+            }
+          >
+            {["p0", "p1", "p2", "p3"].map((priority) => (
+              <option value={priority} key={priority}>
+                {priority}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Lane</span>
+          <select
+            value={props.draft.lane}
+            onInput={(event) =>
+              props.onChange({
+                ...props.draft,
+                lane: event.currentTarget.value as TaskLane
+              })
+            }
+          >
+            {["main", "parallel", "optional"].map((lane) => (
+              <option value={lane} key={lane}>
+                {lane}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Due date</span>
+          <input
+            type="date"
+            value={props.draft.dueDate}
+            onInput={(event) =>
+              props.onChange({ ...props.draft, dueDate: event.currentTarget.value })
+            }
+          />
+        </label>
+        <label>
+          <span>Dependencies</span>
+          <input
+            value={props.draft.dependencies}
+            onInput={(event) =>
+              props.onChange({
+                ...props.draft,
+                dependencies: event.currentTarget.value
+              })
+            }
+          />
+        </label>
+        <label>
+          <span>Context</span>
+          <textarea
+            rows={4}
+            value={props.draft.context}
+            onInput={(event) =>
+              props.onChange({ ...props.draft, context: event.currentTarget.value })
+            }
+          />
+        </label>
+        <label>
+          <span>Progress</span>
+          <textarea
+            rows={3}
+            value={props.draft.progress}
+            onInput={(event) =>
+              props.onChange({ ...props.draft, progress: event.currentTarget.value })
+            }
+          />
+        </label>
+        <label>
+          <span>Acceptance Criteria</span>
+          <textarea
+            rows={3}
+            value={props.draft.acceptanceCriteria}
+            onInput={(event) =>
+              props.onChange({
+                ...props.draft,
+                acceptanceCriteria: event.currentTarget.value
+              })
+            }
+          />
+        </label>
+      </div>
+
+      <div className="todo-editor">
+        <label>
+          <span>New todo</span>
+          <input
+            value={props.draft.newTodo}
+            onInput={(event) =>
+              props.onChange({ ...props.draft, newTodo: event.currentTarget.value })
+            }
+          />
+        </label>
+        <button className="workspace-button" type="button" onClick={props.onAddTodo}>
+          Add Todo
+        </button>
+        <div className="todo-list">
+          {props.draft.todos.map((todo, index) => (
+            <label className="todo-row" key={`${todo.text}-${index}`}>
+              <input
+                type="checkbox"
+                checked={todo.completed}
+                onChange={(event) => {
+                  const nextTodos = props.draft.todos.map((candidate, todoIndex) =>
+                    todoIndex === index
+                      ? { ...candidate, completed: event.currentTarget.checked }
+                      : candidate
+                  );
+
+                  props.onChange({ ...props.draft, todos: nextTodos });
+                }}
+              />
+              <span>{todo.text}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <button
+        className="workspace-button primary"
+        type="button"
+        onClick={props.onSave}
+      >
+        Save Task
+      </button>
+    </section>
+  );
+}
+
+function toProjectInput(draft: ProjectDraft): ProjectInput {
+  return {
+    title: draft.title.trim(),
+    goal: draft.goal,
+    successCriteria: draft.successCriteria,
+    status: draft.status,
+    deadline: draft.deadline || null
+  };
+}
+
+function readDependencyInput(value: string): string[] {
+  return value
+    .split(",")
+    .map((dependency) => dependency.trim())
+    .filter(Boolean);
+}
+
+function WorkspaceStatusItem(props: {
+  id: string;
+  title: string;
+  copy: string;
+}) {
+  return (
+    <div>
+      <h3 id={props.id}>{props.title}</h3>
+      <p>{props.copy}</p>
+    </div>
+  );
+}
+
+function MarkdownFileList(props: { files: WorkspaceMarkdownFile[] }) {
+  return (
+    <ul className="markdown-file-list">
+      {props.files.map((file) => (
+        <li key={file.relativePath}>
+          <span>{file.title}</span>
+          <code>{file.relativePath}</code>
+        </li>
+      ))}
+    </ul>
   );
 }

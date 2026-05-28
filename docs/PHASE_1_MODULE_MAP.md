@@ -1,9 +1,9 @@
 # Phase 1 模块地图
 
 日期：2026-05-28
-状态：Phase 0 handoff
+状态：Phase 1 workspace lifecycle、Project lifecycle、Task detail 已接入
 
-本文件说明 Phase 1 agent 应该从哪些模块扩展。当前模块只提供占位边界，不实现 Phase 1 业务规则，不创建假 Project、假 Task 或假 workspace 数据。
+本文件说明 Phase 1 agent 应该从哪些模块扩展。Workspace management、Markdown parser 和 Journal hook 已进入可用实现；Project/Task 的独立 domain module 仍是后续抽取边界。当前实现不创建假 Project 或假 Task 数据，Project/Task 状态从 workspace 中的人类可读 Markdown 重建。
 
 ## 共享类型
 
@@ -12,13 +12,13 @@
 
 ## 模块入口
 
-- `src/modules/workspace/`：Workspace management。后续实现 workspace 选择、扫描、本地文件访问编排和文件 watcher 接入。
-- `src/domain/project/`：Project domain。后续实现 Project identity、metadata、lifecycle、success criteria 和 task order 规则。
-- `src/domain/task/`：Task domain。后续实现 Task identity、status、priority、lane、dependencies 和 detail sections 规则。
-- `src/modules/markdown/`：Markdown parser/serializer。后续实现 workspace Markdown source-of-truth 的解析和序列化。
+- `src/modules/workspace/`：Workspace management。已实现 workspace 创建、打开、基础 Markdown 结构生成、Markdown 扫描、app 设置隔离，以及 Project/Task Markdown 读写和重启恢复。
+- `src/domain/project/`：Project domain。后续从 `src/shared/domain.ts`、`src/modules/workspace/` 和 `src/modules/markdown/` 抽出更深的 Project identity、metadata、lifecycle、success criteria 和 task order 规则。
+- `src/domain/task/`：Task domain。后续从当前 Task Markdown lifecycle 抽出更深的 Task identity、status、priority、lane、dependencies 和 detail sections 规则。
+- `src/modules/markdown/`：Markdown parser/serializer。已实现 Project/Task Markdown 的 frontmatter、section、Task order 和 Todos checklist 解析/序列化。
 - `src/modules/search/`：SQLite index/Search。后续实现可重建的 SQLite FTS 或等价本地索引。
 - `src/modules/prompt-pack/`：Prompt Pack workflow。后续实现手动 LLM prompt pack 生成、copy 和 paste-back flow。
-- `src/modules/journal/`：Journal。后续实现 Project 和 Task 关键事件的追加式历史记录。
+- `src/modules/journal/`：Journal。已实现 Project 和 Task lifecycle 的 append-only 事件写入 hook；后续实现完整浏览、筛选和恢复体验。
 - `src/modules/memory/`：Memory。后续实现 LLM 可消费摘要的展示、替换确认和历史归档。
 - `src/modules/artifacts/`：Artifact registry。后续实现本地 Markdown artifact、URL artifact、manifest 和 Task 关联。
 

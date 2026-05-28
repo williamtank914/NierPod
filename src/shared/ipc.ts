@@ -1,8 +1,25 @@
-export const fileIpcChannel = "nierpod:file-capability" as const;
+import type {
+  ProjectInput,
+  TaskInput,
+  TaskUpdateInput,
+  WorkspaceState
+} from "./domain";
 
-export const fileCapabilityOperations = ["workspace.describeAccess"] as const;
+export const workspaceIpcChannel = "nierpod:workspace" as const;
 
-export type FileCapabilityOperation = (typeof fileCapabilityOperations)[number];
+export const workspaceOperations = [
+  "workspace.describeAccess",
+  "workspace.getCurrent",
+  "workspace.selectExisting",
+  "workspace.createNew",
+  "workspace.createProject",
+  "workspace.updateProject",
+  "workspace.archiveProject",
+  "workspace.createTask",
+  "workspace.updateTask"
+] as const;
+
+export type WorkspaceOperation = (typeof workspaceOperations)[number];
 
 export type IpcErrorCode =
   | "invalid_request"
@@ -28,60 +45,90 @@ export type IpcFailure = {
 export type IpcResponse<TData> = IpcSuccess<TData> | IpcFailure;
 
 export type WorkspaceAccessDescription = {
-  phase: "phase-0";
-  canReadFiles: false;
-  canWriteFiles: false;
+  phase: "phase-1";
+  canReadFiles: true;
+  canWriteFiles: true;
   message: string;
 };
 
-export type FileCapabilityRequest = {
-  operation: FileCapabilityOperation;
+export type WorkspaceActionResult = {
+  canceled: boolean;
+  state: WorkspaceState;
 };
 
-export type UnknownFileCapabilityRequest = {
+export type WorkspaceMutationResult = {
+  state: WorkspaceState;
+  projectId?: string;
+  taskId?: string;
+};
+
+export type WorkspaceIpcRequest = {
+  operation: WorkspaceOperation;
+};
+
+export type UnknownWorkspaceIpcRequest = {
   operation?: unknown;
   [key: string]: unknown;
 };
 
 export type NierPodBridge = {
   appName: "NierPod";
-  phase: "phase-0";
+  phase: "phase-1";
   workspace: {
     describeAccess: () => Promise<IpcResponse<WorkspaceAccessDescription>>;
+    getCurrent: () => Promise<IpcResponse<WorkspaceState>>;
+    selectExisting: () => Promise<IpcResponse<WorkspaceActionResult>>;
+    createNew: () => Promise<IpcResponse<WorkspaceActionResult>>;
+    createProject: (
+      input: ProjectInput
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    updateProject: (
+      projectId: string,
+      input: ProjectInput
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    archiveProject: (
+      projectId: string
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    createTask: (
+      projectId: string,
+      input: TaskInput
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    updateTask: (
+      projectId: string,
+      taskId: string,
+      input: TaskUpdateInput
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
   };
 };
 
-export function isAllowedFileOperation(
+export function isAllowedWorkspaceOperation(
   operation: unknown
-): operation is FileCapabilityOperation {
-  return fileCapabilityOperations.includes(operation as FileCapabilityOperation);
+): operation is WorkspaceOperation {
+  return workspaceOperations.includes(operation as WorkspaceOperation);
 }
 
-export function resolveFileCapabilityRequest(
-  request: UnknownFileCapabilityRequest
-): IpcResponse<WorkspaceAccessDescription> {
-  if (!isAllowedFileOperation(request.operation)) {
-    return {
-      ok: false,
-      error: {
-        code: "operation_not_allowed",
-        message:
-          "This file operation is not available in Phase 0. Workspace file access must go through an allowlisted main-process capability.",
-        details: {
-          operation: request.operation ?? null
-        }
-      }
-    };
-  }
-
+export function createWorkspaceAccessDescription(): WorkspaceAccessDescription {
   return {
-    ok: true,
-    data: {
-      phase: "phase-0",
-      canReadFiles: false,
-      canWriteFiles: false,
+    phase: "phase-1",
+    canReadFiles: true,
+    canWriteFiles: true,
+    message:
+      "Workspace files are available only through allowlisted main-process IPC. Markdown files in the selected workspace are the source of truth."
+  };
+}
+
+export function createWorkspaceOperationNotAllowedResponse(
+  request: UnknownWorkspaceIpcRequest
+): IpcFailure {
+  return {
+    ok: false,
+    error: {
+      code: "operation_not_allowed",
       message:
-        "Workspace file access is defined as a main-process IPC boundary, but Phase 0 does not read or write workspace files."
+        "This workspace operation is not allowlisted. Renderer code must use the typed NierPod bridge instead of direct file-system access.",
+      details: {
+        operation: request.operation ?? null
+      }
     }
   };
 }
