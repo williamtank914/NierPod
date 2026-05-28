@@ -2,7 +2,14 @@ import type {
   ArtifactInput,
   InboxItem,
   InboxItemInput,
+  MemoryDocument,
+  MemoryDraft,
+  MemoryReplacementResult,
   ProjectInput,
+  PromptOutputDraft,
+  PromptPack,
+  PromptPackBuildInput,
+  SavedLlmNote,
   TaskInput,
   TaskUpdateInput,
   TodayFocusItem,
@@ -25,6 +32,10 @@ export const workspaceOperations = [
   "workspace.addTaskArtifact",
   "workspace.readProjectJournal",
   "workspace.updateProjectJournal",
+  "workspace.buildPromptPack",
+  "workspace.savePromptOutputAsLlmNote",
+  "workspace.readMemory",
+  "workspace.replaceMemory",
   "workspace.getTodayFocus",
   "workspace.setTodayFocusOverride",
   "workspace.getInboxItems",
@@ -89,6 +100,15 @@ export type ProjectJournalResult = {
   source: string;
 };
 
+export type PromptOutputSaveResult = {
+  state: WorkspaceState;
+  note: SavedLlmNote;
+};
+
+export type MemoryReplacementIpcResult = MemoryReplacementResult & {
+  state: WorkspaceState;
+};
+
 export type WorkspaceIpcRequest = {
   operation: WorkspaceOperation;
 };
@@ -137,6 +157,16 @@ export type NierPodBridge = {
       projectId: string,
       source: string
     ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    buildPromptPack: (
+      input: PromptPackBuildInput
+    ) => Promise<IpcResponse<PromptPack>>;
+    savePromptOutputAsLlmNote: (
+      draft: PromptOutputDraft
+    ) => Promise<IpcResponse<PromptOutputSaveResult>>;
+    readMemory: () => Promise<IpcResponse<MemoryDocument>>;
+    replaceMemory: (
+      draft: MemoryDraft
+    ) => Promise<IpcResponse<MemoryReplacementIpcResult>>;
     getTodayFocus: () => Promise<IpcResponse<TodayFocusItem[]>>;
     setTodayFocusOverride: (
       taskId: string,

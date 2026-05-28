@@ -3,8 +3,10 @@ import {
   workspaceIpcChannel,
   type IpcResponse,
   type InboxMutationResult,
+  type MemoryReplacementIpcResult,
   type NierPodBridge,
   type ProjectJournalResult,
+  type PromptOutputSaveResult,
   type WorkspaceAccessDescription,
   type WorkspaceActionResult,
   type WorkspaceMutationResult,
@@ -14,7 +16,12 @@ import type {
   ArtifactInput,
   InboxItem,
   InboxItemInput,
+  MemoryDocument,
+  MemoryDraft,
   ProjectInput,
+  PromptOutputDraft,
+  PromptPack,
+  PromptPackBuildInput,
   TaskInput,
   TaskUpdateInput,
   TodayFocusItem,
@@ -83,6 +90,22 @@ const bridge: NierPodBridge = {
       invokeWorkspace<WorkspaceMutationResult>("workspace.updateProjectJournal", {
         projectId,
         source
+      }),
+    buildPromptPack: (input: PromptPackBuildInput) =>
+      invokeWorkspace<PromptPack>("workspace.buildPromptPack", {
+        input
+      }),
+    savePromptOutputAsLlmNote: (draft: PromptOutputDraft) =>
+      invokeWorkspace<PromptOutputSaveResult>(
+        "workspace.savePromptOutputAsLlmNote",
+        {
+          draft
+        }
+      ),
+    readMemory: () => invokeWorkspace<MemoryDocument>("workspace.readMemory"),
+    replaceMemory: (draft: MemoryDraft) =>
+      invokeWorkspace<MemoryReplacementIpcResult>("workspace.replaceMemory", {
+        draft
       }),
     getTodayFocus: () =>
       invokeWorkspace<TodayFocusItem[]>("workspace.getTodayFocus"),

@@ -16,7 +16,10 @@ import type {
   ArtifactRecord,
   ArtifactType,
   InboxItem,
+  MemoryDocument,
+  MemoryDraft,
   TaskStatus,
+  PromptPack,
   TodayFocusItem,
   TodayFocusOverrideAction,
   WorkspaceSnapshot,
@@ -114,6 +117,16 @@ function installDom() {
     value: dom.window.navigator,
     configurable: true
   });
+  Object.defineProperty(dom.window.navigator, "clipboard", {
+    value: {
+      lastText: "",
+      writeText(text: string) {
+        this.lastText = text;
+        return Promise.resolve();
+      }
+    },
+    configurable: true
+  });
 }
 
 function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
@@ -123,6 +136,7 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
   let artifactCounter = 0;
   let inboxCounter = 0;
   let inboxItems: InboxItem[] = [];
+  let memorySource = "# Memory\n\n## Current Summary\n\nRenderer memory baseline.\n";
   const todayFocusOverrides = new Map<string, TodayFocusOverrideAction>();
   const journalByProjectId = new Map<string, string>();
   const stateAfterOpen: WorkspaceState = {
@@ -500,6 +514,105 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
           data: {
             state: currentState,
             projectId
+          }
+        };
+      },
+      buildPromptPack: async (input) => {
+        const workspace = currentWorkspace();
+        const project =
+          workspace.projects.find((candidate) => candidate.id === input.projectId) ??
+          workspace.activeProjects[0] ??
+          null;
+        const task =
+          project?.tasks.find((candidate) => candidate.id === input.taskId) ??
+          null;
+        const label =
+          input.intent === "break_down_task"
+            ? "Break down this task"
+            : input.intent === "summarize_memory"
+              ? "Summarize memory"
+              : "Plan this project";
+        const prompt: PromptPack = {
+          intent: input.intent,
+          title: label,
+          contextSummary: [
+            task ? `Current Task: ${task.title}` : null,
+            project ? `Project Context: ${project.title}` : null,
+            "Memory: memory.md"
+          ].filter((entry): entry is string => entry !== null),
+          promptMarkdown: `# Prompt Pack: ${label}
+
+## Context Included
+
+${task ? `- Current Task: ${task.title}\n` : ""}${project ? `- Project Context: ${project.title}\n` : ""}- Memory: memory.md
+
+## Memory
+
+${memorySource}
+
+## Request
+
+Keep output advisory.
+`,
+          wholeProjectAnalysisIncluded: input.includeWholeProjectAnalysis === true
+        };
+
+        return {
+          ok: true,
+          data: prompt
+        };
+      },
+      savePromptOutputAsLlmNote: async (draft) => {
+        const note = {
+          id: "llm-note-1",
+          intent: draft.intent,
+          title: draft.intent === "break_down_task" ? "Break down this task" : "Prompt Pack",
+          relativePath: "llm-notes/2026-05-28-break-down-this-task-note.md",
+          projectId: draft.projectId ?? null,
+          taskId: draft.taskId ?? null,
+          createdAt: "2026-05-28T00:00:00.000Z"
+        };
+
+        if (note.projectId) {
+          journalByProjectId.set(
+            note.projectId,
+            `${journalByProjectId.get(note.projectId)?.trimEnd() ?? "# Journal\n\n## Events"}
+- 2026-05-28T00:00:00.000Z - LLM suggestion saved: ${note.title} (${note.id})
+`
+          );
+        }
+
+        return {
+          ok: true,
+          data: {
+            state: currentState,
+            note
+          }
+        };
+      },
+      readMemory: async () => {
+        const memory: MemoryDocument = {
+          relativePath: "memory.md",
+          source: memorySource
+        };
+
+        return {
+          ok: true,
+          data: memory
+        };
+      },
+      replaceMemory: async (draft: MemoryDraft) => {
+        memorySource = draft.draftMarkdown;
+
+        return {
+          ok: true,
+          data: {
+            state: currentState,
+            current: {
+              relativePath: "memory.md",
+              source: memorySource
+            },
+            archiveRelativePath: "memory/2026-05-28T00-00-00Z.md"
           }
         };
       },
@@ -989,4 +1102,80 @@ test("renderer captures Inbox items and converts them into visible workspace tar
   await clickButton(view, "Delete Delete this capture");
 
   assert.equal(view.queryByText("Delete this capture"), null);
+});
+
+test("renderer runs Prompt Pack copy and paste-back without treating LLM output as fact", async () => {
+  const view = render(createElement(App));
+
+  await view.findByText(/No workspace selected/);
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("button", { name: "Create Workspace" }));
+  });
+
+  await changeField(view, "Project title", "NierPod");
+  await changeField(view, "Project goal", "Ship Phase 1");
+  await changeField(view, "Success criteria", "- Prompt Pack is usable.");
+  await clickButton(view, "Create Project");
+  await changeField(view, "Task title", "Build Prompt Pack workflow");
+  await clickButton(view, "Create Task");
+
+  await changeField(view, "Prompt Pack intent", "break_down_task");
+  await clickButton(view, "Generate Prompt Pack");
+
+  await view.findByText("Context Included");
+  await view.findByText("Current Task: Build Prompt Pack workflow");
+  await clickButton(view, "Copy Prompt");
+  await view.findByText("Prompt copied.");
+
+  await changeField(
+    view,
+    "LLM output paste-back",
+    "## Suggested next steps\n\n- Keep this advisory."
+  );
+  await clickButton(view, "Stage LLM Output");
+
+  await view.findByText("Fact Status: not_fact");
+  view.getByRole("button", { name: "Discard LLM Output" });
+  view.getByRole("button", { name: "Manual Apply" });
+
+  await clickButton(view, "Save as LLM Note");
+  await view.findByText(/LLM note saved/);
+});
+
+test("renderer runs Memory summary prompt and confirmed replacement workflow", async () => {
+  const view = render(createElement(App));
+
+  await view.findByText(/No workspace selected/);
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("button", { name: "Create Workspace" }));
+  });
+
+  await view.findByText("Renderer memory baseline.");
+  await clickButton(view, "Generate Memory Prompt");
+  await view.findByText("Prompt Pack: Summarize memory");
+
+  await changeField(
+    view,
+    "Memory draft",
+    "# Memory\n\n## Current Summary\n\nRenderer memory replacement.\n"
+  );
+  await clickButton(view, "Stage Memory Draft");
+  await view.findByText("Confirm before replacing memory.md.");
+
+  await clickButton(view, "Cancel Memory Replacement");
+  await view.findByText("Memory replacement canceled.");
+  await view.findByText("Renderer memory baseline.");
+
+  await changeField(
+    view,
+    "Memory draft",
+    "# Memory\n\n## Current Summary\n\nRenderer memory replacement.\n"
+  );
+  await clickButton(view, "Stage Memory Draft");
+  await clickButton(view, "Replace Memory");
+
+  await view.findByText("Renderer memory replacement.");
+  await view.findByText(/Archived previous Memory to memory\//);
 });

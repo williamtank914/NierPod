@@ -27,10 +27,10 @@ test("Phase 1 module boundaries advertise implemented and placeholder modules", 
     ["Search index", { phase: "phase-1-placeholder", status: "not-implemented" }],
     [
       "Prompt Pack workflow",
-      { phase: "phase-1-placeholder", status: "not-implemented" }
+      { phase: "phase-1", status: "implemented" }
     ],
     ["Journal", { phase: "phase-1", status: "implemented" }],
-    ["Memory", { phase: "phase-1-placeholder", status: "not-implemented" }],
+    ["Memory", { phase: "phase-1", status: "implemented" }],
     [
       "Artifact registry",
       { phase: "phase-1", status: "implemented" }

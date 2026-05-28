@@ -174,3 +174,81 @@ export type InboxItem = {
 export type InboxItemInput = {
   text: string;
 };
+
+export type PromptPackIntent =
+  | "plan_project"
+  | "break_down_task"
+  | "review_risks"
+  | "define_acceptance_criteria"
+  | "summarize_memory"
+  | "suggest_today_focus";
+
+export type PromptPackIntentDefinition = {
+  intent: PromptPackIntent;
+  label: string;
+  requiresProject: boolean;
+  requiresTask: boolean;
+};
+
+export type PromptPackBuildInput = {
+  intent: PromptPackIntent;
+  projectId?: string | null;
+  taskId?: string | null;
+  includeWholeProjectAnalysis?: boolean;
+};
+
+export type PromptPack = {
+  intent: PromptPackIntent;
+  title: string;
+  contextSummary: string[];
+  promptMarkdown: string;
+  wholeProjectAnalysisIncluded: boolean;
+};
+
+export type PromptOutputAction = "discard" | "save_llm_note" | "manual_apply";
+
+export type PromptOutputDraftInput = {
+  intent: PromptPackIntent;
+  projectId?: string | null;
+  taskId?: string | null;
+  promptMarkdown: string;
+  outputMarkdown: string;
+};
+
+export type PromptOutputDraft = PromptOutputDraftInput & {
+  factStatus: "not_fact";
+  availableActions: PromptOutputAction[];
+};
+
+export type SavedLlmNote = {
+  id: string;
+  intent: PromptPackIntent;
+  title: string;
+  relativePath: string;
+  projectId: string | null;
+  taskId: string | null;
+  createdAt: string;
+};
+
+export type MemoryDocument = {
+  relativePath: "memory.md";
+  source: string;
+};
+
+export type MemoryDraftInput = {
+  draftMarkdown: string;
+};
+
+export type MemoryDraft = {
+  draftMarkdown: string;
+  requiresConfirmation: true;
+};
+
+export type MemoryCancelResult = {
+  canceled: true;
+};
+
+export type MemoryReplacementResult = {
+  current: MemoryDocument;
+  archiveRelativePath: string;
+};

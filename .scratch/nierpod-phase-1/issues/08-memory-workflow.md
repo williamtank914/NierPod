@@ -1,6 +1,6 @@
 # Memory workflow
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: AFK
 
 ## Parent
@@ -29,3 +29,10 @@ Type: AFK
 
 - `.scratch/nierpod-phase-1/issues/07-prompt-pack-workflow.md`
 
+## Comments
+
+### 2026-05-28 implementation
+
+- 已实现 `src/modules/memory/` 的当前 Memory 读取、Memory summary prompt 生成、Memory draft stage、取消替换和确认替换。
+- 确认替换时会先把旧 `memory.md` 归档到 `memory/` 下的人类可读 Markdown 文件，再写入新的 `memory.md`，并追加 workspace Journal 事件。
+- 已通过 IPC/preload 接入 renderer，右侧工作台支持查看当前 Memory、生成 Memory prompt、粘贴 draft、确认替换、取消替换和重启后从 `memory.md` 恢复。

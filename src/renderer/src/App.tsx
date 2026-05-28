@@ -4,8 +4,13 @@ import type {
   ArtifactRecord,
   ArtifactType,
   InboxItem,
+  MemoryDocument,
+  MemoryDraft,
   ProjectInput,
   ProjectStatus,
+  PromptOutputDraft,
+  PromptPack,
+  PromptPackIntent,
   TaskLane,
   TaskPriority,
   TaskStatus,
@@ -18,6 +23,8 @@ import type {
 import type {
   InboxMutationResult,
   IpcResponse,
+  MemoryReplacementIpcResult,
+  PromptOutputSaveResult,
   WorkspaceActionResult,
   WorkspaceMutationResult
 } from "../../shared/ipc";
@@ -82,6 +89,18 @@ const emptyArtifactDraft: ArtifactDraft = {
   markdownContent: ""
 };
 
+const promptPackIntentOptions: Array<{
+  intent: PromptPackIntent;
+  label: string;
+}> = [
+  { intent: "plan_project", label: "Plan this project" },
+  { intent: "break_down_task", label: "Break down this task" },
+  { intent: "review_risks", label: "Review risks" },
+  { intent: "define_acceptance_criteria", label: "Define acceptance criteria" },
+  { intent: "summarize_memory", label: "Summarize memory" },
+  { intent: "suggest_today_focus", label: "Suggest today focus" }
+];
+
 const fallbackWorkspaceState: WorkspaceState = {
   phase: "phase-1",
   settings: {
@@ -116,6 +135,21 @@ export function App() {
   const [todayFocusItems, setTodayFocusItems] = useState<TodayFocusItem[]>([]);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [inboxCaptureText, setInboxCaptureText] = useState("");
+  const [promptIntent, setPromptIntent] =
+    useState<PromptPackIntent>("plan_project");
+  const [includeWholeProjectAnalysis, setIncludeWholeProjectAnalysis] =
+    useState(false);
+  const [promptPack, setPromptPack] = useState<PromptPack | null>(null);
+  const [promptOutputText, setPromptOutputText] = useState("");
+  const [promptOutputDraft, setPromptOutputDraft] =
+    useState<PromptOutputDraft | null>(null);
+  const [promptMessage, setPromptMessage] = useState("");
+  const [memoryDocument, setMemoryDocument] = useState<MemoryDocument | null>(
+    null
+  );
+  const [memoryDraftText, setMemoryDraftText] = useState("");
+  const [memoryDraft, setMemoryDraft] = useState<MemoryDraft | null>(null);
+  const [memoryMessage, setMemoryMessage] = useState("");
   const workspace = workspaceState.current;
   const projects = workspace?.activeProjects ?? [];
   const selectedProject =
@@ -272,6 +306,33 @@ export function App() {
     }
 
     void loadTodayFocus();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [workspace]);
+
+  useEffect(() => {
+    const bridge = window.nierpod;
+
+    if (!bridge || !workspace) {
+      setMemoryDocument(null);
+      return;
+    }
+
+    let isCurrent = true;
+    const workspaceBridge = bridge.workspace;
+
+    async function loadMemory() {
+      const response = await workspaceBridge.readMemory();
+
+      if (isCurrent) {
+        setMemoryDocument(response.ok ? response.data : null);
+        setMemoryMessage(response.ok ? "" : response.error.message);
+      }
+    }
+
+    void loadMemory();
 
     return () => {
       isCurrent = false;
@@ -561,6 +622,145 @@ export function App() {
     }
 
     applyInboxMutationResponse(await bridge.workspace.deleteInboxItem(itemId));
+  }
+
+  async function generatePromptPack(intentOverride?: PromptPackIntent) {
+    const bridge = window.nierpod;
+    const intent = intentOverride ?? promptIntent;
+
+    if (!bridge || !workspace) {
+      return;
+    }
+
+    const response = await bridge.workspace.buildPromptPack({
+      intent,
+      projectId: selectedProject?.id ?? null,
+      taskId: selectedTask?.id ?? null,
+      includeWholeProjectAnalysis
+    });
+
+    if (!response.ok) {
+      setPromptMessage(response.error.message);
+      return;
+    }
+
+    setPromptIntent(intent);
+    setPromptPack(response.data);
+    setPromptOutputDraft(null);
+    setPromptMessage("");
+  }
+
+  async function copyPrompt() {
+    const clipboard = navigator.clipboard as
+      | { writeText: (text: string) => Promise<void> }
+      | undefined;
+
+    if (!promptPack || !clipboard) {
+      setPromptMessage("Clipboard is unavailable.");
+      return;
+    }
+
+    await clipboard.writeText(promptPack.promptMarkdown);
+    setPromptMessage("Prompt copied.");
+  }
+
+  function stagePromptOutput() {
+    if (!promptPack || !promptOutputText.trim()) {
+      return;
+    }
+
+    setPromptOutputDraft({
+      intent: promptPack.intent,
+      projectId: selectedProject?.id ?? null,
+      taskId: selectedTask?.id ?? null,
+      promptMarkdown: promptPack.promptMarkdown,
+      outputMarkdown: promptOutputText,
+      factStatus: "not_fact",
+      availableActions: ["discard", "save_llm_note", "manual_apply"]
+    });
+    setPromptMessage("LLM output staged as non-factual draft.");
+  }
+
+  function discardPromptOutput() {
+    setPromptOutputText("");
+    setPromptOutputDraft(null);
+    setPromptMessage("LLM output discarded.");
+  }
+
+  async function savePromptOutput() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !promptOutputDraft) {
+      return;
+    }
+
+    const response = await bridge.workspace.savePromptOutputAsLlmNote(
+      promptOutputDraft
+    );
+
+    applyPromptOutputSaveResponse(response);
+  }
+
+  function applyPromptOutputSaveResponse(
+    response: IpcResponse<PromptOutputSaveResult>
+  ) {
+    if (!response.ok) {
+      setPromptMessage(response.error.message);
+      return;
+    }
+
+    setWorkspaceState(response.data.state);
+    setPromptOutputText("");
+    setPromptOutputDraft(null);
+    setPromptMessage(`LLM note saved to ${response.data.note.relativePath}.`);
+  }
+
+  function stageMemoryReplacementDraft() {
+    const draftMarkdown = `${memoryDraftText.trimEnd()}\n`;
+
+    if (!draftMarkdown.trim()) {
+      return;
+    }
+
+    setMemoryDraft({
+      draftMarkdown,
+      requiresConfirmation: true
+    });
+    setMemoryMessage("Memory draft staged.");
+  }
+
+  function cancelMemoryReplacement() {
+    setMemoryDraft(null);
+    setMemoryMessage("Memory replacement canceled.");
+  }
+
+  async function replaceMemory() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !memoryDraft) {
+      return;
+    }
+
+    const response = await bridge.workspace.replaceMemory(memoryDraft);
+
+    applyMemoryReplacementResponse(response);
+  }
+
+  function applyMemoryReplacementResponse(
+    response: IpcResponse<MemoryReplacementIpcResult>
+  ) {
+    if (!response.ok) {
+      setMemoryMessage(response.error.message);
+      return;
+    }
+
+    setWorkspaceState(response.data.state);
+    setMemoryDocument(response.data.current);
+    setMemoryDraft(null);
+    setMemoryDraftText("");
+    setMemoryMessage(
+      `Archived previous Memory to ${response.data.archiveRelativePath}.`
+    );
   }
 
   function applyInboxMutationResponse(
@@ -953,20 +1153,252 @@ export function App() {
           </p>
         </section>
 
-        <section className="detail-section split" aria-label="LLM context">
-          <div>
-            <h3 id="memory">Memory</h3>
-            <p>
-              Memory will load from <code>memory.md</code>.
-            </p>
-          </div>
-          <div>
-            <h3 id="prompt-pack">Prompt Pack</h3>
-            <p>Prompt Pack will use reviewed Markdown context.</p>
-          </div>
-        </section>
+        <MemoryWorkflowPanel
+          memory={memoryDocument}
+          draftText={memoryDraftText}
+          stagedDraft={memoryDraft}
+          message={memoryMessage}
+          onDraftTextChange={setMemoryDraftText}
+          onGeneratePrompt={() => void generatePromptPack("summarize_memory")}
+          onStageDraft={stageMemoryReplacementDraft}
+          onCancelReplacement={cancelMemoryReplacement}
+          onReplaceMemory={() => void replaceMemory()}
+        />
+
+        <PromptPackPanel
+          intent={promptIntent}
+          intents={promptPackIntentOptions}
+          includeWholeProjectAnalysis={includeWholeProjectAnalysis}
+          promptPack={promptPack}
+          outputText={promptOutputText}
+          outputDraft={promptOutputDraft}
+          message={promptMessage}
+          canGenerate={workspace !== null}
+          onIntentChange={setPromptIntent}
+          onWholeProjectChange={setIncludeWholeProjectAnalysis}
+          onGenerate={() => void generatePromptPack()}
+          onCopy={() => void copyPrompt()}
+          onOutputChange={setPromptOutputText}
+          onStageOutput={stagePromptOutput}
+          onDiscardOutput={discardPromptOutput}
+          onSaveOutput={() => void savePromptOutput()}
+          onManualApply={() =>
+            setPromptMessage("Manual apply flow requires explicit user review.")
+          }
+        />
       </aside>
     </main>
+  );
+}
+
+function MemoryWorkflowPanel(props: {
+  memory: MemoryDocument | null;
+  draftText: string;
+  stagedDraft: MemoryDraft | null;
+  message: string;
+  onDraftTextChange: (text: string) => void;
+  onGeneratePrompt: () => void;
+  onStageDraft: () => void;
+  onCancelReplacement: () => void;
+  onReplaceMemory: () => void;
+}) {
+  return (
+    <section className="detail-section memory-panel" aria-labelledby="memory">
+      <div className="section-heading-row">
+        <h3 id="memory">Memory</h3>
+        <button
+          className="workspace-button"
+          type="button"
+          onClick={props.onGeneratePrompt}
+        >
+          Generate Memory Prompt
+        </button>
+      </div>
+
+      <div className="memory-source" aria-label="Current Memory">
+        <p>{readMemoryPreview(props.memory?.source)}</p>
+        <pre>{props.memory?.source ?? "No workspace Memory loaded."}</pre>
+      </div>
+
+      <label className="journal-editor">
+        <span>Memory draft</span>
+        <textarea
+          rows={6}
+          value={props.draftText}
+          onInput={(event) =>
+            props.onDraftTextChange(event.currentTarget.value)
+          }
+        />
+      </label>
+
+      <div className="workspace-actions">
+        <button
+          className="workspace-button"
+          type="button"
+          onClick={props.onStageDraft}
+        >
+          Stage Memory Draft
+        </button>
+        <button
+          className="workspace-button primary"
+          type="button"
+          disabled={props.stagedDraft === null}
+          onClick={props.onReplaceMemory}
+        >
+          Replace Memory
+        </button>
+      </div>
+
+      {props.stagedDraft ? (
+        <div className="confirmation-box">
+          <p>Confirm before replacing memory.md.</p>
+          <button
+            className="workspace-button"
+            type="button"
+            onClick={props.onCancelReplacement}
+          >
+            Cancel Memory Replacement
+          </button>
+        </div>
+      ) : null}
+
+      {props.message ? <p className="workflow-message">{props.message}</p> : null}
+    </section>
+  );
+}
+
+function PromptPackPanel(props: {
+  intent: PromptPackIntent;
+  intents: Array<{ intent: PromptPackIntent; label: string }>;
+  includeWholeProjectAnalysis: boolean;
+  promptPack: PromptPack | null;
+  outputText: string;
+  outputDraft: PromptOutputDraft | null;
+  message: string;
+  canGenerate: boolean;
+  onIntentChange: (intent: PromptPackIntent) => void;
+  onWholeProjectChange: (enabled: boolean) => void;
+  onGenerate: () => void;
+  onCopy: () => void;
+  onOutputChange: (text: string) => void;
+  onStageOutput: () => void;
+  onDiscardOutput: () => void;
+  onSaveOutput: () => void;
+  onManualApply: () => void;
+}) {
+  return (
+    <section className="detail-section prompt-panel" aria-labelledby="prompt-pack">
+      <h3 id="prompt-pack">Prompt Pack</h3>
+
+      <div className="form-stack">
+        <label>
+          <span>Prompt Pack intent</span>
+          <select
+            value={props.intent}
+            onInput={(event) =>
+              props.onIntentChange(event.currentTarget.value as PromptPackIntent)
+            }
+          >
+            {props.intents.map((intent) => (
+              <option value={intent.intent} key={intent.intent}>
+                {intent.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={props.includeWholeProjectAnalysis}
+            onChange={(event) =>
+              props.onWholeProjectChange(event.currentTarget.checked)
+            }
+          />
+          <span>Include whole-Project analysis</span>
+        </label>
+      </div>
+
+      <button
+        className="workspace-button primary"
+        type="button"
+        disabled={!props.canGenerate}
+        onClick={props.onGenerate}
+      >
+        Generate Prompt Pack
+      </button>
+
+      {props.promptPack ? (
+        <div className="prompt-preview">
+          <h4>{`Prompt Pack: ${props.promptPack.title}`}</h4>
+          <h4>Context Included</h4>
+          <ul className="context-list">
+            {props.promptPack.contextSummary.map((entry) => (
+              <li key={entry}>{entry}</li>
+            ))}
+          </ul>
+          <label>
+            <span>Generated Markdown prompt</span>
+            <textarea rows={10} readOnly value={props.promptPack.promptMarkdown} />
+          </label>
+          <button
+            className="workspace-button"
+            type="button"
+            onClick={props.onCopy}
+          >
+            Copy Prompt
+          </button>
+        </div>
+      ) : null}
+
+      <label className="journal-editor">
+        <span>LLM output paste-back</span>
+        <textarea
+          rows={6}
+          value={props.outputText}
+          onInput={(event) => props.onOutputChange(event.currentTarget.value)}
+        />
+      </label>
+
+      <button
+        className="workspace-button"
+        type="button"
+        disabled={props.promptPack === null}
+        onClick={props.onStageOutput}
+      >
+        Stage LLM Output
+      </button>
+
+      {props.outputDraft ? (
+        <div className="confirmation-box">
+          <p>Fact Status: {props.outputDraft.factStatus}</p>
+          <div className="workspace-actions">
+            <button
+              className="workspace-button"
+              type="button"
+              onClick={props.onDiscardOutput}
+            >
+              Discard LLM Output
+            </button>
+            <button
+              className="workspace-button primary"
+              type="button"
+              onClick={props.onSaveOutput}
+            >
+              Save as LLM Note
+            </button>
+          </div>
+          <button
+            className="workspace-button"
+            type="button"
+            onClick={props.onManualApply}
+          >
+            Manual Apply
+          </button>
+        </div>
+      ) : null}
+
+      {props.message ? <p className="workflow-message">{props.message}</p> : null}
+    </section>
   );
 }
 
@@ -1525,6 +1957,15 @@ function toArtifactInput(draft: ArtifactDraft): ArtifactInput {
         title: draft.title.trim(),
         markdownContent: draft.markdownContent
       };
+}
+
+function readMemoryPreview(source: string | undefined): string {
+  const preview = source
+    ?.split("\n")
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith("#"));
+
+  return preview ?? "No workspace Memory loaded.";
 }
 
 function readDependencyInput(value: string): string[] {

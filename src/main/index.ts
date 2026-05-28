@@ -30,13 +30,23 @@ import {
   updateTask
 } from "../modules/workspace";
 import {
+  buildPromptPack,
+  savePromptOutputAsLlmNote
+} from "../modules/prompt-pack";
+import {
+  readCurrentMemory,
+  replaceMemoryWithDraft
+} from "../modules/memory";
+import {
   createWorkspaceAccessDescription,
   createWorkspaceOperationNotAllowedResponse,
   isAllowedWorkspaceOperation,
   workspaceIpcChannel,
   type IpcResponse,
   type InboxMutationResult,
+  type MemoryReplacementIpcResult,
   type ProjectJournalResult,
+  type PromptOutputSaveResult,
   type UnknownWorkspaceIpcRequest,
   type WorkspaceAccessDescription,
   type WorkspaceActionResult,
@@ -50,7 +60,12 @@ import type {
   ArtifactInput,
   InboxItem,
   InboxItemInput,
+  MemoryDocument,
+  MemoryDraft,
   ProjectInput,
+  PromptOutputDraft,
+  PromptPack,
+  PromptPackBuildInput,
   TaskInput,
   TaskUpdateInput,
   TodayFocusItem,
@@ -104,6 +119,10 @@ async function resolveWorkspaceIpcRequest(
     | WorkspaceMutationResult
     | InboxMutationResult
     | ProjectJournalResult
+    | PromptPack
+    | PromptOutputSaveResult
+    | MemoryDocument
+    | MemoryReplacementIpcResult
     | TodayFocusItem[]
     | InboxItem[]
   >
@@ -207,6 +226,35 @@ async function resolveWorkspaceIpcRequest(
             readRequestText(request.source, "source")
           )
         };
+      case "workspace.buildPromptPack":
+        return {
+          ok: true,
+          data: await buildPromptPackForCurrentWorkspace(
+            settingsDirectory,
+            request.input as PromptPackBuildInput
+          )
+        };
+      case "workspace.savePromptOutputAsLlmNote":
+        return {
+          ok: true,
+          data: await savePromptOutputAsLlmNoteForCurrentWorkspace(
+            settingsDirectory,
+            request.draft as PromptOutputDraft
+          )
+        };
+      case "workspace.readMemory":
+        return {
+          ok: true,
+          data: await readMemoryForCurrentWorkspace(settingsDirectory)
+        };
+      case "workspace.replaceMemory":
+        return {
+          ok: true,
+          data: await replaceMemoryForCurrentWorkspace(
+            settingsDirectory,
+            request.draft as MemoryDraft
+          )
+        };
       case "workspace.getTodayFocus":
         return {
           ok: true,
@@ -290,6 +338,45 @@ async function resolveWorkspaceIpcRequest(
       }
     };
   }
+}
+
+async function buildPromptPackForCurrentWorkspace(
+  settingsDirectory: string,
+  input: PromptPackBuildInput
+): Promise<PromptPack> {
+  return buildPromptPack(await requireCurrentWorkspacePath(settingsDirectory), input);
+}
+
+async function savePromptOutputAsLlmNoteForCurrentWorkspace(
+  settingsDirectory: string,
+  draft: PromptOutputDraft
+): Promise<PromptOutputSaveResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+  const note = await savePromptOutputAsLlmNote(workspacePath, draft);
+
+  return {
+    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    note
+  };
+}
+
+async function readMemoryForCurrentWorkspace(
+  settingsDirectory: string
+): Promise<MemoryDocument> {
+  return readCurrentMemory(await requireCurrentWorkspacePath(settingsDirectory));
+}
+
+async function replaceMemoryForCurrentWorkspace(
+  settingsDirectory: string,
+  draft: MemoryDraft
+): Promise<MemoryReplacementIpcResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+  const result = await replaceMemoryWithDraft(workspacePath, draft);
+
+  return {
+    ...result,
+    state: await getCurrentWorkspaceState({ settingsDirectory })
+  };
 }
 
 async function readTodayFocusForCurrentWorkspace(
