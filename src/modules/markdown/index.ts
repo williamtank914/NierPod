@@ -78,6 +78,10 @@ ${task.todos
 
 ${task.progress}
 
+## Artifacts
+
+${task.artifacts.map(formatArtifactReference).join("\n")}
+
 ## Acceptance Criteria
 
 ${task.acceptanceCriteria}
@@ -123,6 +127,7 @@ export function parseTaskMarkdown(source: string, markdownPath: string): Task {
     context: readMarkdownSection(source, "Context"),
     todos: readTodos(readMarkdownSection(source, "Todos")),
     progress: readMarkdownSection(source, "Progress"),
+    artifacts: [],
     acceptanceCriteria: readMarkdownSection(source, "Acceptance Criteria"),
     markdownPath
   };
@@ -164,9 +169,25 @@ export function createTaskFromInput(
     context: "",
     todos: [],
     progress: "",
+    artifacts: [],
     acceptanceCriteria: "",
     markdownPath
   };
+}
+
+function formatArtifactReference(taskArtifact: Task["artifacts"][number]): string {
+  const target =
+    taskArtifact.type === "url"
+      ? taskArtifact.url
+      : taskArtifact.path
+        ? `../artifacts/${taskArtifact.path}`
+        : null;
+
+  if (!target) {
+    return `- ${taskArtifact.title} (${taskArtifact.id})`;
+  }
+
+  return `- [${taskArtifact.title}](${target}) (${taskArtifact.id})`;
 }
 
 function readFrontmatter(source: string): Record<string, string> {

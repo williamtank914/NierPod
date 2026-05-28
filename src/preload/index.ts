@@ -3,12 +3,14 @@ import {
   workspaceIpcChannel,
   type IpcResponse,
   type NierPodBridge,
+  type ProjectJournalResult,
   type WorkspaceAccessDescription,
   type WorkspaceActionResult,
   type WorkspaceMutationResult,
   type WorkspaceOperation
 } from "../shared/ipc";
 import type {
+  ArtifactInput,
   ProjectInput,
   TaskInput,
   TaskUpdateInput,
@@ -57,6 +59,25 @@ const bridge: NierPodBridge = {
         projectId,
         taskId,
         input
+      }),
+    addTaskArtifact: (
+      projectId: string,
+      taskId: string,
+      input: ArtifactInput
+    ) =>
+      invokeWorkspace<WorkspaceMutationResult>("workspace.addTaskArtifact", {
+        projectId,
+        taskId,
+        input
+      }),
+    readProjectJournal: (projectId: string) =>
+      invokeWorkspace<ProjectJournalResult>("workspace.readProjectJournal", {
+        projectId
+      }),
+    updateProjectJournal: (projectId: string, source: string) =>
+      invokeWorkspace<WorkspaceMutationResult>("workspace.updateProjectJournal", {
+        projectId,
+        source
       })
   }
 };

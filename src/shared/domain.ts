@@ -62,6 +62,25 @@ export type TaskTodo = {
   completed: boolean;
 };
 
+export type ArtifactType = "markdown" | "url";
+
+export type ArtifactRecord = {
+  id: string;
+  title: string;
+  type: ArtifactType;
+  path: string | null;
+  url: string | null;
+  taskId: string;
+  createdAt: string;
+};
+
+export type ArtifactInput = {
+  type: ArtifactType;
+  title: string;
+  markdownContent?: string;
+  url?: string;
+};
+
 export type Task = {
   id: string;
   projectId: string;
@@ -74,6 +93,7 @@ export type Task = {
   context: string;
   todos: TaskTodo[];
   progress: string;
+  artifacts: ArtifactRecord[];
   acceptanceCriteria: string;
   markdownPath: string;
 };

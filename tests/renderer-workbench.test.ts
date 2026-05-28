@@ -13,6 +13,8 @@ import { App } from "../src/renderer/src/App";
 import type {
   Project,
   Task,
+  ArtifactRecord,
+  ArtifactType,
   TaskStatus,
   WorkspaceSnapshot,
   WorkspaceState
@@ -115,6 +117,8 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
   let currentState = initialState;
   let projectCounter = 0;
   let taskCounter = 0;
+  let artifactCounter = 0;
+  const journalByProjectId = new Map<string, string>();
   const stateAfterOpen: WorkspaceState = {
     ...emptyWorkspaceState,
     current: openedWorkspace,
@@ -204,6 +208,14 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
           tasks: [],
           markdownPath: `${workspace.rootPath}/projects/project-${projectCounter}/project.md`
         };
+        journalByProjectId.set(
+          project.id,
+          `# Journal
+
+## Events
+- 2026-05-28T00:00:00.000Z - Project created: ${project.title} (${project.id})
+`
+        );
         const projects = [...workspace.projects, project];
 
         setCurrentWorkspace({
@@ -290,6 +302,7 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
           context: "",
           todos: [],
           progress: "",
+          artifacts: [],
           acceptanceCriteria: "",
           markdownPath: `${project.markdownPath}/../tasks/task-${taskCounter}.md`
         };
@@ -355,6 +368,74 @@ function installBridge(initialState: WorkspaceState = emptyWorkspaceState) {
             state: currentState,
             projectId,
             taskId
+          }
+        };
+      },
+      addTaskArtifact: async (projectId, taskId, input) => {
+        const project = currentWorkspace().projects.find(
+          (candidate) => candidate.id === projectId
+        );
+
+        if (!project) {
+          throw new Error("Project missing in test bridge.");
+        }
+
+        artifactCounter += 1;
+
+        const artifactType = input.type satisfies ArtifactType;
+        const artifact: ArtifactRecord = {
+          id: `artifact-${artifactCounter}`,
+          title: input.title,
+          type: artifactType,
+          path:
+            artifactType === "markdown"
+              ? `${input.title.toLowerCase().replaceAll(" ", "-")}.md`
+              : null,
+          url: artifactType === "url" ? input.url ?? null : null,
+          taskId,
+          createdAt: "2026-05-28T00:00:00.000Z"
+        };
+        const updatedProject: Project = {
+          ...project,
+          tasks: project.tasks.map((task) =>
+            task.id === taskId
+              ? { ...task, artifacts: [...task.artifacts, artifact] }
+              : task
+          )
+        };
+
+        replaceProject(updatedProject);
+        journalByProjectId.set(
+          projectId,
+          `${journalByProjectId.get(projectId)?.trimEnd() ?? "# Journal\n\n## Events"}
+- 2026-05-28T00:00:00.000Z - Artifact added: ${artifact.title} (${artifact.id})
+`
+        );
+
+        return {
+          ok: true,
+          data: {
+            state: currentState,
+            projectId,
+            taskId,
+            artifactId: artifact.id
+          }
+        };
+      },
+      readProjectJournal: async (projectId) => ({
+        ok: true,
+        data: {
+          source: journalByProjectId.get(projectId) ?? "# Journal\n\n## Events\n"
+        }
+      }),
+      updateProjectJournal: async (projectId, source) => {
+        journalByProjectId.set(projectId, source);
+
+        return {
+          ok: true,
+          data: {
+            state: currentState,
+            projectId
           }
         };
       }
@@ -519,5 +600,60 @@ test("renderer edits Task detail without inferring done from checklist", async (
   assert.equal(
     (view.getByLabelText("Task status") as HTMLSelectElement).value,
     "done"
+  );
+});
+
+test("renderer adds Task artifacts and edits Project Journal through the bridge", async () => {
+  const view = render(createElement(App));
+
+  await view.findByText(/No workspace selected/);
+
+  await act(async () => {
+    fireEvent.click(view.getByRole("button", { name: "Create Workspace" }));
+  });
+
+  await changeField(view, "Project title", "NierPod");
+  await changeField(view, "Project goal", "Ship Phase 1");
+  await changeField(view, "Success criteria", "- Artifacts are visible.");
+  await clickButton(view, "Create Project");
+  await changeField(view, "Task title", "Artifacts and Journal");
+  await clickButton(view, "Create Task");
+
+  await act(async () => {
+    fireEvent.click(
+      await view.findByRole("button", { name: "Artifacts and Journal" })
+    );
+  });
+
+  await changeField(view, "Artifact title", "PRD v1");
+  await changeField(view, "Markdown artifact content", "# PRD v1\n\nDone.");
+  await clickButton(view, "Add Artifact");
+
+  await view.findByText("PRD v1");
+
+  await changeField(view, "Artifact type", "url");
+  await changeField(view, "Artifact title", "Demo link");
+  await changeField(view, "Artifact URL", "https://example.com/demo");
+  await clickButton(view, "Add Artifact");
+
+  await view.findByText("Demo link");
+  view.getByText("https://example.com/demo");
+
+  const journalField = (await view.findByLabelText(
+    "Project Journal"
+  )) as HTMLTextAreaElement;
+
+  assert.match(journalField.value, /Project created: NierPod/);
+
+  await changeField(
+    view,
+    "Project Journal",
+    "# Journal\n\n## Events\n\nManual journal note."
+  );
+  await clickButton(view, "Save Journal");
+
+  assert.match(
+    (view.getByLabelText("Project Journal") as HTMLTextAreaElement).value,
+    /Manual journal note/
   );
 });

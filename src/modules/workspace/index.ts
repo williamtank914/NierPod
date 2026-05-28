@@ -16,8 +16,16 @@ import {
   serializeProjectMarkdown,
   serializeTaskMarkdown
 } from "../markdown";
-import { appendJournalEvent } from "../journal";
+import {
+  appendJournalEvent,
+  appendProjectJournalEvent,
+  readProjectJournalSource,
+  writeProjectJournalSource
+} from "../journal";
+import { addArtifactRecord, readArtifactRecords } from "../artifacts";
 import type {
+  ArtifactInput,
+  ArtifactRecord,
   FutureModuleBoundary,
   Project,
   ProjectInput,
@@ -174,7 +182,7 @@ export async function createProject(
 
   await mkdir(dirname(markdownPath), { recursive: true });
   await writeFile(markdownPath, serializeProjectMarkdown(project), "utf8");
-  await appendJournalEvent(rootPath, {
+  await appendWorkspaceAndProjectJournalEvent(rootPath, project, {
     summary: `Project created: ${project.title} (${project.id})`
   });
 
@@ -201,7 +209,7 @@ export async function updateProject(
     serializeProjectMarkdown(updatedProject),
     "utf8"
   );
-  await appendJournalEvent(workspacePath, {
+  await appendWorkspaceAndProjectJournalEvent(workspacePath, updatedProject, {
     summary: `Project updated: ${updatedProject.title} (${updatedProject.id})`
   });
 
@@ -222,7 +230,7 @@ export async function archiveProject(
     deadline: project.deadline
   });
 
-  await appendJournalEvent(workspacePath, {
+  await appendWorkspaceAndProjectJournalEvent(workspacePath, archivedProject, {
     summary: `Project archived: ${archivedProject.title} (${archivedProject.id})`
   });
 
@@ -251,7 +259,7 @@ export async function createTask(
     serializeProjectMarkdown(updatedProject),
     "utf8"
   );
-  await appendJournalEvent(workspacePath, {
+  await appendWorkspaceAndProjectJournalEvent(workspacePath, updatedProject, {
     summary: `Task created: ${task.title} (${task.id})`
   });
 
@@ -290,11 +298,101 @@ export async function updateTask(
     serializeTaskMarkdown(updatedTask),
     "utf8"
   );
-  await appendJournalEvent(workspacePath, {
-    summary: `Task updated: ${updatedTask.title} (${updatedTask.id})`
-  });
+  await appendTaskJournalEvents(workspacePath, task, updatedTask);
 
   return updatedTask;
+}
+
+export async function addTaskArtifact(
+  workspacePath: string,
+  projectId: string,
+  taskId: string,
+  input: ArtifactInput
+): Promise<ArtifactRecord> {
+  const project = await findProject(workspacePath, projectId);
+  const task = project.tasks.find((candidate) => candidate.id === taskId);
+
+  if (!task) {
+    throw new Error(`Task was not found: ${taskId}`);
+  }
+
+  const artifact = await addArtifactRecord(dirname(project.markdownPath), task.id, input);
+  await writeFile(
+    task.markdownPath,
+    serializeTaskMarkdown({
+      ...task,
+      artifacts: [...task.artifacts, artifact]
+    }),
+    "utf8"
+  );
+
+  await appendWorkspaceAndProjectJournalEvent(workspacePath, project, {
+    summary: `Artifact added: ${artifact.title} (${artifact.id}) to ${task.title} (${task.id})`
+  });
+
+  return artifact;
+}
+
+export async function readProjectJournal(
+  workspacePath: string,
+  projectId: string
+): Promise<string> {
+  const project = await findProject(workspacePath, projectId);
+
+  return readProjectJournalSource(dirname(project.markdownPath));
+}
+
+export async function updateProjectJournal(
+  workspacePath: string,
+  projectId: string,
+  source: string
+): Promise<void> {
+  const project = await findProject(workspacePath, projectId);
+
+  await writeProjectJournalSource(dirname(project.markdownPath), source);
+}
+
+async function appendWorkspaceAndProjectJournalEvent(
+  workspacePath: string,
+  project: Project,
+  event: { summary: string }
+): Promise<void> {
+  await appendJournalEvent(workspacePath, event);
+  await appendProjectJournalEvent(dirname(project.markdownPath), event);
+}
+
+async function appendTaskJournalEvents(
+  workspacePath: string,
+  previousTask: Task,
+  updatedTask: Task
+): Promise<void> {
+  const projectDirectory = dirname(dirname(updatedTask.markdownPath));
+  const summaries = [`Task updated: ${updatedTask.title} (${updatedTask.id})`];
+
+  if (previousTask.status !== updatedTask.status) {
+    summaries.push(
+      updatedTask.status === "done"
+        ? `Task completed: ${updatedTask.title} (${updatedTask.id})`
+        : `Task status changed: ${updatedTask.title} (${updatedTask.id}) ${previousTask.status} -> ${updatedTask.status}`
+    );
+  }
+
+  if (previousTask.priority !== updatedTask.priority) {
+    summaries.push(
+      `Task priority changed: ${updatedTask.title} (${updatedTask.id}) ${previousTask.priority} -> ${updatedTask.priority}`
+    );
+  }
+
+  if (previousTask.acceptanceCriteria !== updatedTask.acceptanceCriteria) {
+    summaries.push(
+      `Acceptance Criteria changed: ${updatedTask.title} (${updatedTask.id})`
+    );
+  }
+
+  for (const summary of summaries) {
+    await appendJournalEvent(workspacePath, { summary });
+    await appendProjectJournalEvent(projectDirectory, { summary });
+  }
 }
 
 export async function readWorkspaceModel(
@@ -518,6 +616,7 @@ async function readProjects(rootPath: string): Promise<Project[]> {
 
 async function readProjectTasks(project: Project): Promise<Task[]> {
   const taskDirectory = join(dirname(project.markdownPath), "tasks");
+  const projectArtifacts = await readArtifactRecords(dirname(project.markdownPath));
 
   if (!(await pathExists(taskDirectory))) {
     return [];
@@ -537,15 +636,35 @@ async function readProjectTasks(project: Project): Promise<Task[]> {
     );
   }
 
-  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const artifactsByTaskId = groupArtifactsByTaskId(projectArtifacts);
+  const tasksWithArtifacts = tasks.map((task) => ({
+    ...task,
+    artifacts: artifactsByTaskId.get(task.id) ?? []
+  }));
+  const tasksById = new Map(tasksWithArtifacts.map((task) => [task.id, task]));
   const orderedTasks = project.taskOrder
     .map((taskId) => tasksById.get(taskId))
     .filter((task): task is Task => task !== undefined);
-  const unorderedTasks = tasks
+  const unorderedTasks = tasksWithArtifacts
     .filter((task) => !project.taskOrder.includes(task.id))
     .sort((left, right) => left.title.localeCompare(right.title));
 
   return [...orderedTasks, ...unorderedTasks];
+}
+
+function groupArtifactsByTaskId(
+  artifacts: ArtifactRecord[]
+): Map<string, ArtifactRecord[]> {
+  const artifactsByTaskId = new Map<string, ArtifactRecord[]>();
+
+  for (const artifact of artifacts) {
+    const taskArtifacts = artifactsByTaskId.get(artifact.taskId) ?? [];
+
+    taskArtifacts.push(artifact);
+    artifactsByTaskId.set(artifact.taskId, taskArtifacts);
+  }
+
+  return artifactsByTaskId;
 }
 
 async function findProject(

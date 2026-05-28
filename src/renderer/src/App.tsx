@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
+  ArtifactInput,
+  ArtifactRecord,
+  ArtifactType,
   ProjectInput,
   ProjectStatus,
   TaskLane,
@@ -39,6 +42,13 @@ type TaskDraft = {
   newTodo: string;
 };
 
+type ArtifactDraft = {
+  type: ArtifactType;
+  title: string;
+  url: string;
+  markdownContent: string;
+};
+
 const emptyProjectDraft: ProjectDraft = {
   title: "",
   goal: "",
@@ -59,6 +69,13 @@ const emptyTaskDraft: TaskDraft = {
   progress: "",
   acceptanceCriteria: "",
   newTodo: ""
+};
+
+const emptyArtifactDraft: ArtifactDraft = {
+  type: "markdown",
+  title: "",
+  url: "",
+  markdownContent: ""
 };
 
 const fallbackWorkspaceState: WorkspaceState = {
@@ -89,6 +106,9 @@ export function App() {
     useState<ProjectDraft>(emptyProjectDraft);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyTaskDraft);
+  const [artifactDraft, setArtifactDraft] =
+    useState<ArtifactDraft>(emptyArtifactDraft);
+  const [journalDraft, setJournalDraft] = useState("");
   const workspace = workspaceState.current;
   const projects = workspace?.activeProjects ?? [];
   const selectedProject =
@@ -174,8 +194,36 @@ export function App() {
   }, [selectedProject]);
 
   useEffect(() => {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProjectId) {
+      setJournalDraft("");
+      return;
+    }
+
+    let isCurrent = true;
+    const projectId = selectedProjectId;
+    const workspaceBridge = bridge.workspace;
+
+    async function loadJournal() {
+      const response = await workspaceBridge.readProjectJournal(projectId);
+
+      if (isCurrent) {
+        setJournalDraft(response.ok ? response.data.source : response.error.message);
+      }
+    }
+
+    void loadJournal();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedProjectId]);
+
+  useEffect(() => {
     if (!selectedTask) {
       setTaskDraft(emptyTaskDraft);
+      setArtifactDraft(emptyArtifactDraft);
       return;
     }
 
@@ -307,6 +355,56 @@ export function App() {
       setSelectedProjectId(response.data.projectId ?? selectedProject.id);
       setSelectedTaskId(response.data.taskId ?? selectedTask.id);
     }
+  }
+
+  async function addTaskArtifactFromDraft() {
+    const bridge = window.nierpod;
+
+    if (
+      !bridge ||
+      !selectedProject ||
+      !selectedTask ||
+      !artifactDraft.title.trim()
+    ) {
+      return;
+    }
+
+    const response = await bridge.workspace.addTaskArtifact(
+      selectedProject.id,
+      selectedTask.id,
+      toArtifactInput(artifactDraft)
+    );
+
+    applyWorkspaceMutationResponse(response);
+
+    if (response.ok) {
+      setSelectedProjectId(response.data.projectId ?? selectedProject.id);
+      setSelectedTaskId(response.data.taskId ?? selectedTask.id);
+      setArtifactDraft(emptyArtifactDraft);
+
+      const journalResponse = await bridge.workspace.readProjectJournal(
+        response.data.projectId ?? selectedProject.id
+      );
+
+      if (journalResponse.ok) {
+        setJournalDraft(journalResponse.data.source);
+      }
+    }
+  }
+
+  async function saveJournal() {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject) {
+      return;
+    }
+
+    applyWorkspaceMutationResponse(
+      await bridge.workspace.updateProjectJournal(
+        selectedProject.id,
+        journalDraft
+      )
+    );
   }
 
   function addTodo() {
@@ -571,8 +669,12 @@ export function App() {
         {selectedTask ? (
           <TaskDetailEditor
             draft={taskDraft}
+            artifacts={selectedTask.artifacts}
+            artifactDraft={artifactDraft}
             onChange={setTaskDraft}
+            onArtifactChange={setArtifactDraft}
             onAddTodo={addTodo}
+            onAddArtifact={() => void addTaskArtifactFromDraft()}
             onSave={() => void saveTask()}
           />
         ) : selectedProject ? (
@@ -627,6 +729,14 @@ export function App() {
             </section>
           </>
         )}
+
+        {selectedProject ? (
+          <ProjectJournalEditor
+            source={journalDraft}
+            onChange={setJournalDraft}
+            onSave={() => void saveJournal()}
+          />
+        ) : null}
 
         <section className="detail-section" aria-labelledby="settings-title">
           <h3 id="settings-title">Settings Isolation</h3>
@@ -729,8 +839,12 @@ function ProjectDraftFields(props: {
 
 function TaskDetailEditor(props: {
   draft: TaskDraft;
+  artifacts: ArtifactRecord[];
+  artifactDraft: ArtifactDraft;
   onChange: (draft: TaskDraft) => void;
+  onArtifactChange: (draft: ArtifactDraft) => void;
   onAddTodo: () => void;
+  onAddArtifact: () => void;
   onSave: () => void;
 }) {
   return (
@@ -894,12 +1008,123 @@ function TaskDetailEditor(props: {
         </div>
       </div>
 
+      <div className="artifact-editor">
+        <h3>Artifacts</h3>
+        {props.artifacts.length > 0 ? (
+          <ul className="artifact-list">
+            {props.artifacts.map((artifact) => (
+              <li key={artifact.id}>
+                <span>{artifact.title}</span>
+                <code>
+                  {artifact.type === "url"
+                    ? artifact.url
+                    : `artifacts/${artifact.path}`}
+                </code>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No artifacts linked.</p>
+        )}
+        <div className="form-stack">
+          <label>
+            <span>Artifact type</span>
+            <select
+              value={props.artifactDraft.type}
+              onInput={(event) =>
+                props.onArtifactChange({
+                  ...props.artifactDraft,
+                  type: event.currentTarget.value as ArtifactType
+                })
+              }
+            >
+              <option value="markdown">markdown</option>
+              <option value="url">url</option>
+            </select>
+          </label>
+          <label>
+            <span>Artifact title</span>
+            <input
+              value={props.artifactDraft.title}
+              onInput={(event) =>
+                props.onArtifactChange({
+                  ...props.artifactDraft,
+                  title: event.currentTarget.value
+                })
+              }
+            />
+          </label>
+          {props.artifactDraft.type === "url" ? (
+            <label>
+              <span>Artifact URL</span>
+              <input
+                value={props.artifactDraft.url}
+                onInput={(event) =>
+                  props.onArtifactChange({
+                    ...props.artifactDraft,
+                    url: event.currentTarget.value
+                  })
+                }
+              />
+            </label>
+          ) : (
+            <label>
+              <span>Markdown artifact content</span>
+              <textarea
+                rows={4}
+                value={props.artifactDraft.markdownContent}
+                onInput={(event) =>
+                  props.onArtifactChange({
+                    ...props.artifactDraft,
+                    markdownContent: event.currentTarget.value
+                  })
+                }
+              />
+            </label>
+          )}
+        </div>
+        <button
+          className="workspace-button"
+          type="button"
+          onClick={props.onAddArtifact}
+        >
+          Add Artifact
+        </button>
+      </div>
+
       <button
         className="workspace-button primary"
         type="button"
         onClick={props.onSave}
       >
         Save Task
+      </button>
+    </section>
+  );
+}
+
+function ProjectJournalEditor(props: {
+  source: string;
+  onChange: (source: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="detail-section" aria-labelledby="project-journal-title">
+      <h3 id="project-journal-title">Journal</h3>
+      <label className="journal-editor">
+        <span>Project Journal</span>
+        <textarea
+          rows={8}
+          value={props.source}
+          onInput={(event) => props.onChange(event.currentTarget.value)}
+        />
+      </label>
+      <button
+        className="workspace-button primary"
+        type="button"
+        onClick={props.onSave}
+      >
+        Save Journal
       </button>
     </section>
   );
@@ -913,6 +1138,20 @@ function toProjectInput(draft: ProjectDraft): ProjectInput {
     status: draft.status,
     deadline: draft.deadline || null
   };
+}
+
+function toArtifactInput(draft: ArtifactDraft): ArtifactInput {
+  return draft.type === "url"
+    ? {
+        type: "url",
+        title: draft.title.trim(),
+        url: draft.url.trim()
+      }
+    : {
+        type: "markdown",
+        title: draft.title.trim(),
+        markdownContent: draft.markdownContent
+      };
 }
 
 function readDependencyInput(value: string): string[] {

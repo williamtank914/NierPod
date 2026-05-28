@@ -1,4 +1,5 @@
 import type {
+  ArtifactInput,
   ProjectInput,
   TaskInput,
   TaskUpdateInput,
@@ -16,7 +17,10 @@ export const workspaceOperations = [
   "workspace.updateProject",
   "workspace.archiveProject",
   "workspace.createTask",
-  "workspace.updateTask"
+  "workspace.updateTask",
+  "workspace.addTaskArtifact",
+  "workspace.readProjectJournal",
+  "workspace.updateProjectJournal"
 ] as const;
 
 export type WorkspaceOperation = (typeof workspaceOperations)[number];
@@ -60,6 +64,11 @@ export type WorkspaceMutationResult = {
   state: WorkspaceState;
   projectId?: string;
   taskId?: string;
+  artifactId?: string;
+};
+
+export type ProjectJournalResult = {
+  source: string;
 };
 
 export type WorkspaceIpcRequest = {
@@ -97,6 +106,18 @@ export type NierPodBridge = {
       projectId: string,
       taskId: string,
       input: TaskUpdateInput
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    addTaskArtifact: (
+      projectId: string,
+      taskId: string,
+      input: ArtifactInput
+    ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    readProjectJournal: (
+      projectId: string
+    ) => Promise<IpcResponse<ProjectJournalResult>>;
+    updateProjectJournal: (
+      projectId: string,
+      source: string
     ) => Promise<IpcResponse<WorkspaceMutationResult>>;
   };
 };

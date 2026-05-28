@@ -9,14 +9,17 @@ import {
 } from "electron";
 import { join } from "node:path";
 import {
+  addTaskArtifact,
   archiveProject,
   createProject,
   createTask,
   createWorkspace,
   getCurrentWorkspaceState,
   openWorkspace,
+  readProjectJournal,
   readWorkspaceSettings,
   updateProject,
+  updateProjectJournal,
   updateTask
 } from "../modules/workspace";
 import {
@@ -25,12 +28,14 @@ import {
   isAllowedWorkspaceOperation,
   workspaceIpcChannel,
   type IpcResponse,
+  type ProjectJournalResult,
   type UnknownWorkspaceIpcRequest,
   type WorkspaceAccessDescription,
   type WorkspaceActionResult,
   type WorkspaceMutationResult
 } from "../shared/ipc";
 import type {
+  ArtifactInput,
   ProjectInput,
   TaskInput,
   TaskUpdateInput,
@@ -81,6 +86,7 @@ async function resolveWorkspaceIpcRequest(
     | WorkspaceState
     | WorkspaceActionResult
     | WorkspaceMutationResult
+    | ProjectJournalResult
   >
 > {
   if (!isAllowedWorkspaceOperation(request.operation)) {
@@ -153,6 +159,33 @@ async function resolveWorkspaceIpcRequest(
             readRequestString(request.projectId, "projectId"),
             readRequestString(request.taskId, "taskId"),
             request.input as TaskUpdateInput
+          )
+        };
+      case "workspace.addTaskArtifact":
+        return {
+          ok: true,
+          data: await addTaskArtifactForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.projectId, "projectId"),
+            readRequestString(request.taskId, "taskId"),
+            request.input as ArtifactInput
+          )
+        };
+      case "workspace.readProjectJournal":
+        return {
+          ok: true,
+          data: await readProjectJournalForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.projectId, "projectId")
+          )
+        };
+      case "workspace.updateProjectJournal":
+        return {
+          ok: true,
+          data: await updateProjectJournalForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.projectId, "projectId"),
+            readRequestText(request.source, "source")
           )
         };
     }
@@ -246,6 +279,56 @@ async function updateTaskForCurrentWorkspace(
   };
 }
 
+async function addTaskArtifactForCurrentWorkspace(
+  settingsDirectory: string,
+  projectId: string,
+  taskId: string,
+  input: ArtifactInput
+): Promise<WorkspaceMutationResult> {
+  const artifact = await addTaskArtifact(
+    await requireCurrentWorkspacePath(settingsDirectory),
+    projectId,
+    taskId,
+    input
+  );
+
+  return {
+    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    projectId,
+    taskId,
+    artifactId: artifact.id
+  };
+}
+
+async function readProjectJournalForCurrentWorkspace(
+  settingsDirectory: string,
+  projectId: string
+): Promise<ProjectJournalResult> {
+  return {
+    source: await readProjectJournal(
+      await requireCurrentWorkspacePath(settingsDirectory),
+      projectId
+    )
+  };
+}
+
+async function updateProjectJournalForCurrentWorkspace(
+  settingsDirectory: string,
+  projectId: string,
+  source: string
+): Promise<WorkspaceMutationResult> {
+  await updateProjectJournal(
+    await requireCurrentWorkspacePath(settingsDirectory),
+    projectId,
+    source
+  );
+
+  return {
+    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    projectId
+  };
+}
+
 async function requireCurrentWorkspacePath(
   settingsDirectory: string
 ): Promise<string> {
@@ -260,6 +343,14 @@ async function requireCurrentWorkspacePath(
 
 function readRequestString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value) {
+    throw new Error(`Workspace request is missing ${name}.`);
+  }
+
+  return value;
+}
+
+function readRequestText(value: unknown, name: string): string {
+  if (typeof value !== "string") {
     throw new Error(`Workspace request is missing ${name}.`);
   }
 

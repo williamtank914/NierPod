@@ -1,6 +1,6 @@
 # Artifacts and Journal
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: AFK
 
 ## Parent
@@ -15,16 +15,29 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] 用户可以给 Task 添加本地 Markdown artifact。
-- [ ] 用户可以给 Task 添加 URL artifact。
-- [ ] Artifact 可以关联到 Task，并在 Task detail 中展示。
-- [ ] Artifact records 通过 manifest 持久化，应用重启后可恢复。
-- [ ] Project created、Project archived、Task created、Task status changed、Task priority changed、Task completed、Artifact added、Acceptance Criteria changed 等关键事件会追加到 Journal。
-- [ ] 用户可以查看并编辑 Journal。
-- [ ] Journal 保持人类可读 Markdown 时间线。
-- [ ] 有测试覆盖 artifact manifest round-trip、Task artifact 关联、Journal 自动事件追加和用户编辑保留。
+- [x] 用户可以给 Task 添加本地 Markdown artifact。
+- [x] 用户可以给 Task 添加 URL artifact。
+- [x] Artifact 可以关联到 Task，并在 Task detail 中展示。
+- [x] Artifact records 通过 manifest 持久化，应用重启后可恢复。
+- [x] Project created、Project archived、Task created、Task status changed、Task priority changed、Task completed、Artifact added、Acceptance Criteria changed 等关键事件会追加到 Journal。
+- [x] 用户可以查看并编辑 Journal。
+- [x] Journal 保持人类可读 Markdown 时间线。
+- [x] 有测试覆盖 artifact manifest round-trip、Task artifact 关联、Journal 自动事件追加和用户编辑保留。
+
+## Implementation notes
+
+- `src/modules/artifacts/` 实现 artifact manifest JSON 读写，Project 目录下使用 `artifacts/artifact-manifest.json` 持久化 records。
+- `src/modules/workspace/` 暴露 `addTaskArtifact`、`readProjectJournal`、`updateProjectJournal`，并在重建 Project/Task model 时把 artifact records 回填到 Task。
+- `src/modules/journal/` 继续保留 workspace 根 `journal.md`，同时维护 Project 级 `journal.md`，用于 Task detail 的查看和编辑。
+- renderer Task detail 增加 Markdown/URL artifact 添加表单、artifact 列表和 Project Journal 编辑区。
+
+## Verification
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`
+- `pnpm build`
 
 ## Blocked by
 
 - `.scratch/nierpod-phase-1/issues/03-task-detail-editor.md`
-

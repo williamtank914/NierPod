@@ -31,7 +31,7 @@ test("Phase 1 module boundaries advertise implemented and placeholder modules", 
     ["Memory", { phase: "phase-1-placeholder", status: "not-implemented" }],
     [
       "Artifact registry",
-      { phase: "phase-1-placeholder", status: "not-implemented" }
+      { phase: "phase-1", status: "implemented" }
     ]
   ]);
 

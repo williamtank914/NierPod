@@ -237,7 +237,8 @@ p {
 
 .form-stack label,
 .inline-form label,
-.todo-editor label {
+.todo-editor label,
+.journal-editor {
   display: grid;
   gap: 5px;
   color: #59645e;
@@ -249,7 +250,8 @@ p {
 .form-stack textarea,
 .form-stack select,
 .inline-form input,
-.todo-editor input {
+.todo-editor input,
+.journal-editor textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid #ccd5d0;
@@ -268,7 +270,8 @@ p {
   padding: 0 10px;
 }
 
-.form-stack textarea {
+.form-stack textarea,
+.journal-editor textarea {
   min-height: 72px;
   padding: 9px 10px;
   resize: vertical;
@@ -397,6 +400,51 @@ p {
 .todo-list {
   display: grid;
   gap: 8px;
+}
+
+.artifact-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #edf0ee;
+}
+
+.artifact-editor h3 {
+  margin-bottom: 0;
+}
+
+.artifact-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.artifact-list li {
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid #edf0ee;
+  border-radius: 7px;
+  background: #f7f9f8;
+}
+
+.artifact-list span {
+  color: #252a28;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.artifact-list code {
+  color: #5f6c65;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.journal-editor {
+  margin-bottom: 10px;
 }
 
 .todo-editor .todo-row {

@@ -19,7 +19,10 @@ test("workspace IPC exposes only allowlisted Phase 1 operations", () => {
     "workspace.updateProject",
     "workspace.archiveProject",
     "workspace.createTask",
-    "workspace.updateTask"
+    "workspace.updateTask",
+    "workspace.addTaskArtifact",
+    "workspace.readProjectJournal",
+    "workspace.updateProjectJournal"
   ]);
 
   for (const operation of workspaceOperations) {
