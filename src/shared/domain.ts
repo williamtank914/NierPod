@@ -9,6 +9,7 @@ export type FutureModuleBoundary = {
 export type WorkspaceMarkdownKind =
   | "workspace"
   | "projects"
+  | "today"
   | "inbox"
   | "memory"
   | "journal"
@@ -144,4 +145,32 @@ export type WorkspaceModel = {
   rootPath: string;
   projects: Project[];
   activeProjects: Project[];
+};
+
+export type TodayFocusOverrideAction = "pin" | "snooze" | "hide";
+
+export type TodayFocusItem = {
+  task: Task;
+  project: Project;
+  override: TodayFocusOverrideAction | null;
+};
+
+export type InboxItemStatus =
+  | "open"
+  | "converted_to_project"
+  | "converted_to_task"
+  | "attached_to_task"
+  | "archived";
+
+export type InboxItem = {
+  id: string;
+  text: string;
+  status: InboxItemStatus;
+  targetProjectId: string | null;
+  targetTaskId: string | null;
+  createdAt: string;
+};
+
+export type InboxItemInput = {
+  text: string;
 };

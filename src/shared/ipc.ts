@@ -1,8 +1,12 @@
 import type {
   ArtifactInput,
+  InboxItem,
+  InboxItemInput,
   ProjectInput,
   TaskInput,
   TaskUpdateInput,
+  TodayFocusItem,
+  TodayFocusOverrideAction,
   WorkspaceState
 } from "./domain";
 
@@ -20,7 +24,16 @@ export const workspaceOperations = [
   "workspace.updateTask",
   "workspace.addTaskArtifact",
   "workspace.readProjectJournal",
-  "workspace.updateProjectJournal"
+  "workspace.updateProjectJournal",
+  "workspace.getTodayFocus",
+  "workspace.setTodayFocusOverride",
+  "workspace.getInboxItems",
+  "workspace.captureInboxItem",
+  "workspace.convertInboxItemToProject",
+  "workspace.convertInboxItemToTask",
+  "workspace.attachInboxItemToTaskContext",
+  "workspace.archiveInboxItem",
+  "workspace.deleteInboxItem"
 ] as const;
 
 export type WorkspaceOperation = (typeof workspaceOperations)[number];
@@ -65,6 +78,11 @@ export type WorkspaceMutationResult = {
   projectId?: string;
   taskId?: string;
   artifactId?: string;
+};
+
+export type InboxMutationResult = WorkspaceMutationResult & {
+  itemId?: string;
+  inboxItems: InboxItem[];
 };
 
 export type ProjectJournalResult = {
@@ -119,6 +137,33 @@ export type NierPodBridge = {
       projectId: string,
       source: string
     ) => Promise<IpcResponse<WorkspaceMutationResult>>;
+    getTodayFocus: () => Promise<IpcResponse<TodayFocusItem[]>>;
+    setTodayFocusOverride: (
+      taskId: string,
+      action: TodayFocusOverrideAction
+    ) => Promise<IpcResponse<TodayFocusItem[]>>;
+    getInboxItems: () => Promise<IpcResponse<InboxItem[]>>;
+    captureInboxItem: (
+      input: InboxItemInput
+    ) => Promise<IpcResponse<InboxMutationResult>>;
+    convertInboxItemToProject: (
+      itemId: string
+    ) => Promise<IpcResponse<InboxMutationResult>>;
+    convertInboxItemToTask: (
+      itemId: string,
+      projectId: string
+    ) => Promise<IpcResponse<InboxMutationResult>>;
+    attachInboxItemToTaskContext: (
+      itemId: string,
+      projectId: string,
+      taskId: string
+    ) => Promise<IpcResponse<InboxMutationResult>>;
+    archiveInboxItem: (
+      itemId: string
+    ) => Promise<IpcResponse<InboxMutationResult>>;
+    deleteInboxItem: (
+      itemId: string
+    ) => Promise<IpcResponse<InboxMutationResult>>;
   };
 };
 

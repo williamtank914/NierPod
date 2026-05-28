@@ -23,10 +23,18 @@ import {
   writeProjectJournalSource
 } from "../journal";
 import { addArtifactRecord, readArtifactRecords } from "../artifacts";
+import {
+  captureInboxItem as captureInboxItemInMarkdown,
+  deleteInboxItem as deleteInboxItemFromMarkdown,
+  readInboxItems as readInboxItemsFromMarkdown,
+  updateInboxItem as updateInboxItemInMarkdown
+} from "../inbox";
 import type {
   ArtifactInput,
   ArtifactRecord,
   FutureModuleBoundary,
+  InboxItem,
+  InboxItemInput,
   Project,
   ProjectInput,
   Task,
@@ -350,6 +358,100 @@ export async function updateProjectJournal(
   const project = await findProject(workspacePath, projectId);
 
   await writeProjectJournalSource(dirname(project.markdownPath), source);
+}
+
+export async function captureInboxItem(
+  workspacePath: string,
+  input: InboxItemInput
+): Promise<InboxItem> {
+  return captureInboxItemInMarkdown(workspacePath, input);
+}
+
+export async function readInboxItems(
+  workspacePath: string
+): Promise<InboxItem[]> {
+  return readInboxItemsFromMarkdown(workspacePath);
+}
+
+export async function convertInboxItemToProject(
+  workspacePath: string,
+  itemId: string
+): Promise<Project> {
+  const item = await requireOpenInboxItem(workspacePath, itemId);
+  const project = await createProject(workspacePath, {
+    title: item.text,
+    goal: `Captured from Inbox: ${item.text}`,
+    successCriteria: "",
+    status: "active",
+    deadline: null
+  });
+
+  await updateInboxItemInMarkdown(workspacePath, item.id, {
+    status: "converted_to_project",
+    targetProjectId: project.id,
+    targetTaskId: null
+  });
+
+  return project;
+}
+
+export async function convertInboxItemToTask(
+  workspacePath: string,
+  itemId: string,
+  projectId: string
+): Promise<Task> {
+  const item = await requireOpenInboxItem(workspacePath, itemId);
+  const task = await createTask(workspacePath, projectId, {
+    title: item.text
+  });
+
+  await updateInboxItemInMarkdown(workspacePath, item.id, {
+    status: "converted_to_task",
+    targetProjectId: projectId,
+    targetTaskId: task.id
+  });
+
+  return task;
+}
+
+export async function attachInboxItemToTaskContext(
+  workspacePath: string,
+  itemId: string,
+  projectId: string,
+  taskId: string
+): Promise<Task> {
+  const item = await requireOpenInboxItem(workspacePath, itemId);
+  const task = await findTask(workspacePath, projectId, taskId);
+  const context = task.context.trim()
+    ? `${task.context.trimEnd()}\n\nInbox Context:\n- ${item.text}`
+    : `Inbox Context:\n- ${item.text}`;
+  const updatedTask = await updateTask(workspacePath, projectId, taskId, {
+    context
+  });
+
+  await updateInboxItemInMarkdown(workspacePath, item.id, {
+    status: "attached_to_task",
+    targetProjectId: projectId,
+    targetTaskId: taskId
+  });
+
+  return updatedTask;
+}
+
+export async function archiveInboxItem(
+  workspacePath: string,
+  itemId: string
+): Promise<InboxItem> {
+  return updateInboxItemInMarkdown(workspacePath, itemId, {
+    status: "archived"
+  });
+}
+
+export async function deleteInboxItem(
+  workspacePath: string,
+  itemId: string
+): Promise<void> {
+  await deleteInboxItemFromMarkdown(workspacePath, itemId);
 }
 
 async function appendWorkspaceAndProjectJournalEvent(
@@ -694,6 +796,25 @@ async function findTask(
   }
 
   return task;
+}
+
+async function requireOpenInboxItem(
+  workspacePath: string,
+  itemId: string
+): Promise<InboxItem> {
+  const item = (await readInboxItemsFromMarkdown(workspacePath)).find(
+    (candidate) => candidate.id === itemId
+  );
+
+  if (!item) {
+    throw new Error(`Inbox item was not found: ${itemId}`);
+  }
+
+  if (item.status !== "open") {
+    throw new Error(`Inbox item is already processed: ${itemId}`);
+  }
+
+  return item;
 }
 
 function createWorkspaceState(

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   workspaceIpcChannel,
   type IpcResponse,
+  type InboxMutationResult,
   type NierPodBridge,
   type ProjectJournalResult,
   type WorkspaceAccessDescription,
@@ -11,9 +12,13 @@ import {
 } from "../shared/ipc";
 import type {
   ArtifactInput,
+  InboxItem,
+  InboxItemInput,
   ProjectInput,
   TaskInput,
   TaskUpdateInput,
+  TodayFocusItem,
+  TodayFocusOverrideAction,
   WorkspaceState
 } from "../shared/domain";
 
@@ -78,6 +83,55 @@ const bridge: NierPodBridge = {
       invokeWorkspace<WorkspaceMutationResult>("workspace.updateProjectJournal", {
         projectId,
         source
+      }),
+    getTodayFocus: () =>
+      invokeWorkspace<TodayFocusItem[]>("workspace.getTodayFocus"),
+    setTodayFocusOverride: (
+      taskId: string,
+      action: TodayFocusOverrideAction
+    ) =>
+      invokeWorkspace<TodayFocusItem[]>("workspace.setTodayFocusOverride", {
+        taskId,
+        action
+      }),
+    getInboxItems: () =>
+      invokeWorkspace<InboxItem[]>("workspace.getInboxItems"),
+    captureInboxItem: (input: InboxItemInput) =>
+      invokeWorkspace<InboxMutationResult>("workspace.captureInboxItem", {
+        input
+      }),
+    convertInboxItemToProject: (itemId: string) =>
+      invokeWorkspace<InboxMutationResult>(
+        "workspace.convertInboxItemToProject",
+        {
+          itemId
+        }
+      ),
+    convertInboxItemToTask: (itemId: string, projectId: string) =>
+      invokeWorkspace<InboxMutationResult>("workspace.convertInboxItemToTask", {
+        itemId,
+        projectId
+      }),
+    attachInboxItemToTaskContext: (
+      itemId: string,
+      projectId: string,
+      taskId: string
+    ) =>
+      invokeWorkspace<InboxMutationResult>(
+        "workspace.attachInboxItemToTaskContext",
+        {
+          itemId,
+          projectId,
+          taskId
+        }
+      ),
+    archiveInboxItem: (itemId: string) =>
+      invokeWorkspace<InboxMutationResult>("workspace.archiveInboxItem", {
+        itemId
+      }),
+    deleteInboxItem: (itemId: string) =>
+      invokeWorkspace<InboxMutationResult>("workspace.deleteInboxItem", {
+        itemId
       })
   }
 };

@@ -22,6 +22,8 @@ test("Phase 1 module boundaries advertise implemented and placeholder modules", 
       "Markdown parser",
       { phase: "phase-1", status: "implemented" }
     ],
+    ["Today Focus", { phase: "phase-1", status: "implemented" }],
+    ["Inbox", { phase: "phase-1", status: "implemented" }],
     ["Search index", { phase: "phase-1-placeholder", status: "not-implemented" }],
     [
       "Prompt Pack workflow",
@@ -75,6 +77,8 @@ test("Phase 0 handoff docs cover verification commands and Phase 1 module entry 
     "src/domain/project/",
     "src/domain/task/",
     "src/modules/markdown/",
+    "src/modules/today-focus/",
+    "src/modules/inbox/",
     "src/modules/search/",
     "src/modules/prompt-pack/",
     "src/modules/journal/",

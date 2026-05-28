@@ -3,16 +3,20 @@ import type {
   ArtifactInput,
   ArtifactRecord,
   ArtifactType,
+  InboxItem,
   ProjectInput,
   ProjectStatus,
   TaskLane,
   TaskPriority,
   TaskStatus,
   TaskTodoInput,
+  TodayFocusItem,
+  TodayFocusOverrideAction,
   WorkspaceMarkdownFile,
   WorkspaceState
 } from "../../shared/domain";
 import type {
+  InboxMutationResult,
   IpcResponse,
   WorkspaceActionResult,
   WorkspaceMutationResult
@@ -109,6 +113,9 @@ export function App() {
   const [artifactDraft, setArtifactDraft] =
     useState<ArtifactDraft>(emptyArtifactDraft);
   const [journalDraft, setJournalDraft] = useState("");
+  const [todayFocusItems, setTodayFocusItems] = useState<TodayFocusItem[]>([]);
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [inboxCaptureText, setInboxCaptureText] = useState("");
   const workspace = workspaceState.current;
   const projects = workspace?.activeProjects ?? [];
   const selectedProject =
@@ -244,6 +251,58 @@ export function App() {
       newTodo: ""
     });
   }, [selectedTask]);
+
+  useEffect(() => {
+    const bridge = window.nierpod;
+
+    if (!bridge || !workspace) {
+      setTodayFocusItems([]);
+      return;
+    }
+
+    let isCurrent = true;
+    const workspaceBridge = bridge.workspace;
+
+    async function loadTodayFocus() {
+      const response = await workspaceBridge.getTodayFocus();
+
+      if (isCurrent) {
+        setTodayFocusItems(response.ok ? response.data : []);
+      }
+    }
+
+    void loadTodayFocus();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [workspace]);
+
+  useEffect(() => {
+    const bridge = window.nierpod;
+
+    if (!bridge || !workspace) {
+      setInboxItems([]);
+      return;
+    }
+
+    let isCurrent = true;
+    const workspaceBridge = bridge.workspace;
+
+    async function loadInbox() {
+      const response = await workspaceBridge.getInboxItems();
+
+      if (isCurrent) {
+        setInboxItems(response.ok ? response.data : []);
+      }
+    }
+
+    void loadInbox();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [workspace]);
 
   async function runWorkspaceAction(action: WorkspaceAction) {
     const bridge = window.nierpod;
@@ -407,6 +466,126 @@ export function App() {
     );
   }
 
+  async function applyTodayFocusOverride(
+    taskId: string,
+    action: TodayFocusOverrideAction
+  ) {
+    const bridge = window.nierpod;
+
+    if (!bridge) {
+      return;
+    }
+
+    const response = await bridge.workspace.setTodayFocusOverride(taskId, action);
+
+    if (response.ok) {
+      setTodayFocusItems(response.data);
+    }
+  }
+
+  async function captureInboxItemFromDraft() {
+    const bridge = window.nierpod;
+    const text = inboxCaptureText.trim();
+
+    if (!bridge || !workspace || !text) {
+      return;
+    }
+
+    const response = await bridge.workspace.captureInboxItem({ text });
+
+    applyInboxMutationResponse(response);
+
+    if (response.ok) {
+      setInboxCaptureText("");
+    }
+  }
+
+  async function convertInboxItemToProject(itemId: string) {
+    const bridge = window.nierpod;
+
+    if (!bridge) {
+      return;
+    }
+
+    const response = await bridge.workspace.convertInboxItemToProject(itemId);
+
+    applyInboxMutationResponse(response);
+  }
+
+  async function convertInboxItemToTask(itemId: string) {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject) {
+      return;
+    }
+
+    const response = await bridge.workspace.convertInboxItemToTask(
+      itemId,
+      selectedProject.id
+    );
+
+    applyInboxMutationResponse(response);
+  }
+
+  async function attachInboxItemToContext(itemId: string) {
+    const bridge = window.nierpod;
+
+    if (!bridge || !selectedProject || !selectedTask) {
+      return;
+    }
+
+    const response = await bridge.workspace.attachInboxItemToTaskContext(
+      itemId,
+      selectedProject.id,
+      selectedTask.id
+    );
+
+    applyInboxMutationResponse(response);
+  }
+
+  async function archiveInboxItem(itemId: string) {
+    const bridge = window.nierpod;
+
+    if (!bridge) {
+      return;
+    }
+
+    applyInboxMutationResponse(await bridge.workspace.archiveInboxItem(itemId));
+  }
+
+  async function deleteInboxItem(itemId: string) {
+    const bridge = window.nierpod;
+
+    if (!bridge) {
+      return;
+    }
+
+    applyInboxMutationResponse(await bridge.workspace.deleteInboxItem(itemId));
+  }
+
+  function applyInboxMutationResponse(
+    response: IpcResponse<InboxMutationResult>
+  ) {
+    if (!response.ok) {
+      setWorkspaceState({
+        ...fallbackWorkspaceState,
+        message: response.error.message
+      });
+      return;
+    }
+
+    setWorkspaceState(response.data.state);
+    setInboxItems(response.data.inboxItems);
+
+    if (response.data.projectId) {
+      setSelectedProjectId(response.data.projectId);
+    }
+
+    if (response.data.taskId) {
+      setSelectedTaskId(response.data.taskId);
+    }
+  }
+
   function addTodo() {
     const text = taskDraft.newTodo.trim();
 
@@ -517,6 +696,22 @@ export function App() {
         </section>
 
         {workspace ? (
+          <InboxPanel
+            items={inboxItems}
+            captureText={inboxCaptureText}
+            canConvertToTask={selectedProject !== null}
+            canAttachToTask={selectedTask !== null}
+            onCaptureTextChange={setInboxCaptureText}
+            onCapture={() => void captureInboxItemFromDraft()}
+            onConvertToProject={(itemId) => void convertInboxItemToProject(itemId)}
+            onConvertToTask={(itemId) => void convertInboxItemToTask(itemId)}
+            onAttachToTask={(itemId) => void attachInboxItemToContext(itemId)}
+            onArchive={(itemId) => void archiveInboxItem(itemId)}
+            onDelete={(itemId) => void deleteInboxItem(itemId)}
+          />
+        ) : null}
+
+        {workspace ? (
           <section className="workspace-entry" aria-labelledby="project-form-title">
             <h2 id="project-form-title">New Project</h2>
             <ProjectDraftFields
@@ -577,6 +772,18 @@ export function App() {
         aria-label="Task timeline"
         id="task-timeline"
       >
+        <TodayFocusPanel
+          items={todayFocusItems}
+          hasWorkspace={workspace !== null}
+          onSelect={(projectId, taskId) => {
+            setSelectedProjectId(projectId);
+            setSelectedTaskId(taskId);
+          }}
+          onOverride={(taskId, action) =>
+            void applyTodayFocusOverride(taskId, action)
+          }
+        />
+
         <div className="panel-header">
           <p className="eyebrow">Task timeline</p>
           <h2>{selectedProject?.title ?? "Workspace Status"}</h2>
@@ -760,6 +967,172 @@ export function App() {
         </section>
       </aside>
     </main>
+  );
+}
+
+function InboxPanel(props: {
+  items: InboxItem[];
+  captureText: string;
+  canConvertToTask: boolean;
+  canAttachToTask: boolean;
+  onCaptureTextChange: (text: string) => void;
+  onCapture: () => void;
+  onConvertToProject: (itemId: string) => void;
+  onConvertToTask: (itemId: string) => void;
+  onAttachToTask: (itemId: string) => void;
+  onArchive: (itemId: string) => void;
+  onDelete: (itemId: string) => void;
+}) {
+  return (
+    <section className="workspace-entry inbox-panel" aria-labelledby="inbox-title">
+      <h2 id="inbox-title">Inbox</h2>
+      <label>
+        <span>Inbox capture</span>
+        <textarea
+          rows={3}
+          value={props.captureText}
+          onInput={(event) =>
+            props.onCaptureTextChange(event.currentTarget.value)
+          }
+        />
+      </label>
+      <button
+        className="workspace-button primary"
+        type="button"
+        onClick={props.onCapture}
+      >
+        Capture Inbox Item
+      </button>
+
+      <div className="inbox-list">
+        {props.items.length > 0 ? (
+          props.items.map((item) => (
+            <article className="inbox-item" key={item.id}>
+              <div>
+                <p>{item.text}</p>
+                <code>{item.status}</code>
+              </div>
+              {item.status === "open" ? (
+                <div className="inbox-actions">
+                  <button
+                    type="button"
+                    aria-label={`Convert to Project ${item.text}`}
+                    onClick={() => props.onConvertToProject(item.id)}
+                  >
+                    Project
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Convert to Task ${item.text}`}
+                    disabled={!props.canConvertToTask}
+                    onClick={() => props.onConvertToTask(item.id)}
+                  >
+                    Task
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Attach to Task Context ${item.text}`}
+                    disabled={!props.canAttachToTask}
+                    onClick={() => props.onAttachToTask(item.id)}
+                  >
+                    Context
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Archive ${item.text}`}
+                    onClick={() => props.onArchive(item.id)}
+                  >
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${item.text}`}
+                    onClick={() => props.onDelete(item.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </article>
+          ))
+        ) : (
+          <p>No Inbox items.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TodayFocusPanel(props: {
+  items: TodayFocusItem[];
+  hasWorkspace: boolean;
+  onSelect: (projectId: string, taskId: string) => void;
+  onOverride: (taskId: string, action: TodayFocusOverrideAction) => void;
+}) {
+  return (
+    <section className="today-focus-panel" aria-labelledby="today-focus-title">
+      <div className="panel-header compact">
+        <p className="eyebrow">Today</p>
+        <h2 id="today-focus-title">Today Focus</h2>
+      </div>
+
+      {props.hasWorkspace ? (
+        props.items.length > 0 ? (
+          <div className="focus-list">
+            {props.items.map((item) => (
+              <article
+                className={`focus-item ${
+                  item.task.status === "blocked" ? "blocked" : ""
+                }`}
+                key={item.task.id}
+              >
+                <button
+                  className="focus-main"
+                  type="button"
+                  onClick={() => props.onSelect(item.project.id, item.task.id)}
+                >
+                  <span>{item.task.title}</span>
+                  <small>{item.project.title}</small>
+                </button>
+                <div className="focus-meta">
+                  <span className="status-pill">{item.task.status}</span>
+                  <span>{item.task.priority}</span>
+                  {item.task.dueDate ? <span>{item.task.dueDate}</span> : null}
+                  {item.override === "pin" ? <span>pinned today</span> : null}
+                </div>
+                <div className="focus-actions">
+                  <button
+                    type="button"
+                    aria-label={`Pin ${item.task.title}`}
+                    onClick={() => props.onOverride(item.task.id, "pin")}
+                  >
+                    Pin
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Snooze ${item.task.title}`}
+                    onClick={() => props.onOverride(item.task.id, "snooze")}
+                  >
+                    Snooze
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Hide ${item.task.title}`}
+                    onClick={() => props.onOverride(item.task.id, "hide")}
+                  >
+                    Hide
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p>No active ready, in progress, or blocked Tasks for today.</p>
+        )
+      ) : (
+        <p>Create or open a workspace to load Today Focus.</p>
+      )}
+    </section>
   );
 }
 

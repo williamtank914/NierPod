@@ -189,6 +189,76 @@ p {
   overflow-wrap: anywhere;
 }
 
+.inbox-panel label {
+  display: grid;
+  gap: 5px;
+  color: #59645e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inbox-panel textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
+  padding: 9px 10px;
+  border: 1px solid #ccd5d0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #252a28;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.inbox-list {
+  display: grid;
+  gap: 8px;
+}
+
+.inbox-item {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #dfe4e1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.inbox-item p {
+  margin-bottom: 4px;
+  color: #252a28;
+  font-weight: 700;
+}
+
+.inbox-item code {
+  color: #667067;
+  font-size: 11px;
+}
+
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inbox-actions button {
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px solid #cbd5d0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #4a544f;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inbox-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .nav-stack {
   display: grid;
   gap: 8px;
@@ -334,9 +404,99 @@ p {
   border-bottom: 1px solid #dfe4e1;
 }
 
+.panel-header.compact {
+  padding-bottom: 10px;
+}
+
 .panel-header h2 {
   margin-bottom: 0;
   font-size: 21px;
+}
+
+.today-focus-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.focus-list {
+  display: grid;
+  gap: 10px;
+}
+
+.focus-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d7dfdb;
+  border-left: 4px solid #4d7966;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.focus-item.blocked {
+  border-left-color: #9a5c42;
+}
+
+.focus-main {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #252a28;
+  cursor: pointer;
+  text-align: left;
+}
+
+.focus-main span {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.focus-main small {
+  color: #667067;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.focus-meta,
+.focus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.focus-meta span {
+  min-height: 24px;
+  padding: 4px 7px;
+  border: 1px solid #e2e7e4;
+  border-radius: 7px;
+  color: #4d5952;
+  background: #f7f9f8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.focus-meta .status-pill {
+  color: #27312d;
+  border-color: #c7d2cd;
+  background: #edf3f0;
+}
+
+.focus-actions button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #cbd5d0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #4a544f;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .timeline-empty {

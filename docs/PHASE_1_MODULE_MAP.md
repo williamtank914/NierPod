@@ -1,9 +1,9 @@
 # Phase 1 模块地图
 
 日期：2026-05-28
-状态：Phase 1 workspace lifecycle、Project lifecycle、Task detail 已接入
+状态：Phase 1 workspace lifecycle、Project lifecycle、Task detail、Today Focus、Inbox 已接入
 
-本文件说明 Phase 1 agent 应该从哪些模块扩展。Workspace management、Markdown parser 和 Journal hook 已进入可用实现；Project/Task 的独立 domain module 仍是后续抽取边界。当前实现不创建假 Project 或假 Task 数据，Project/Task 状态从 workspace 中的人类可读 Markdown 重建。
+本文件说明 Phase 1 agent 应该从哪些模块扩展。Workspace management、Markdown parser、Journal hook、Today Focus 和 Inbox 已进入可用实现；Project/Task 的独立 domain module 仍是后续抽取边界。当前实现不创建假 Project 或假 Task 数据，Project/Task/Inbox/Today Focus 状态从 workspace 中的人类可读 Markdown 重建。
 
 ## 共享类型
 
@@ -16,6 +16,8 @@
 - `src/domain/project/`：Project domain。后续从 `src/shared/domain.ts`、`src/modules/workspace/` 和 `src/modules/markdown/` 抽出更深的 Project identity、metadata、lifecycle、success criteria 和 task order 规则。
 - `src/domain/task/`：Task domain。后续从当前 Task Markdown lifecycle 抽出更深的 Task identity、status、priority、lane、dependencies 和 detail sections 规则。
 - `src/modules/markdown/`：Markdown parser/serializer。已实现 Project/Task Markdown 的 frontmatter、section、Task order 和 Todos checklist 解析/序列化。
+- `src/modules/today-focus/`：Today Focus。已实现跨 Project active Task 聚合、排序、blocked 可见性和 `today.md` 每日 override。
+- `src/modules/inbox/`：Inbox。已实现 `inbox.md` 捕获、状态读写、转 Project、转 Task、附加 Task Context、archive 和 delete。
 - `src/modules/search/`：SQLite index/Search。后续实现可重建的 SQLite FTS 或等价本地索引。
 - `src/modules/prompt-pack/`：Prompt Pack workflow。后续实现手动 LLM prompt pack 生成、copy 和 paste-back flow。
 - `src/modules/journal/`：Journal。已实现 Project 和 Task lifecycle 的 append-only 事件写入 hook；后续实现完整浏览、筛选和恢复体验。

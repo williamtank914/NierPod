@@ -10,12 +10,19 @@ import {
 import { join } from "node:path";
 import {
   addTaskArtifact,
+  archiveInboxItem,
+  attachInboxItemToTaskContext,
+  captureInboxItem,
   archiveProject,
+  convertInboxItemToProject,
+  convertInboxItemToTask,
   createProject,
   createTask,
   createWorkspace,
+  deleteInboxItem,
   getCurrentWorkspaceState,
   openWorkspace,
+  readInboxItems,
   readProjectJournal,
   readWorkspaceSettings,
   updateProject,
@@ -28,17 +35,26 @@ import {
   isAllowedWorkspaceOperation,
   workspaceIpcChannel,
   type IpcResponse,
+  type InboxMutationResult,
   type ProjectJournalResult,
   type UnknownWorkspaceIpcRequest,
   type WorkspaceAccessDescription,
   type WorkspaceActionResult,
   type WorkspaceMutationResult
 } from "../shared/ipc";
+import {
+  readTodayFocusItems,
+  setTodayFocusOverride
+} from "../modules/today-focus";
 import type {
   ArtifactInput,
+  InboxItem,
+  InboxItemInput,
   ProjectInput,
   TaskInput,
   TaskUpdateInput,
+  TodayFocusItem,
+  TodayFocusOverrideAction,
   WorkspaceState
 } from "../shared/domain";
 
@@ -86,7 +102,10 @@ async function resolveWorkspaceIpcRequest(
     | WorkspaceState
     | WorkspaceActionResult
     | WorkspaceMutationResult
+    | InboxMutationResult
     | ProjectJournalResult
+    | TodayFocusItem[]
+    | InboxItem[]
   >
 > {
   if (!isAllowedWorkspaceOperation(request.operation)) {
@@ -188,6 +207,76 @@ async function resolveWorkspaceIpcRequest(
             readRequestText(request.source, "source")
           )
         };
+      case "workspace.getTodayFocus":
+        return {
+          ok: true,
+          data: await readTodayFocusForCurrentWorkspace(settingsDirectory)
+        };
+      case "workspace.setTodayFocusOverride":
+        return {
+          ok: true,
+          data: await setTodayFocusOverrideForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.taskId, "taskId"),
+            readTodayFocusOverrideAction(request.action)
+          )
+        };
+      case "workspace.getInboxItems":
+        return {
+          ok: true,
+          data: await readInboxItemsForCurrentWorkspace(settingsDirectory)
+        };
+      case "workspace.captureInboxItem":
+        return {
+          ok: true,
+          data: await captureInboxItemForCurrentWorkspace(
+            settingsDirectory,
+            request.input as InboxItemInput
+          )
+        };
+      case "workspace.convertInboxItemToProject":
+        return {
+          ok: true,
+          data: await convertInboxItemToProjectForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.itemId, "itemId")
+          )
+        };
+      case "workspace.convertInboxItemToTask":
+        return {
+          ok: true,
+          data: await convertInboxItemToTaskForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.itemId, "itemId"),
+            readRequestString(request.projectId, "projectId")
+          )
+        };
+      case "workspace.attachInboxItemToTaskContext":
+        return {
+          ok: true,
+          data: await attachInboxItemToTaskContextForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.itemId, "itemId"),
+            readRequestString(request.projectId, "projectId"),
+            readRequestString(request.taskId, "taskId")
+          )
+        };
+      case "workspace.archiveInboxItem":
+        return {
+          ok: true,
+          data: await archiveInboxItemForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.itemId, "itemId")
+          )
+        };
+      case "workspace.deleteInboxItem":
+        return {
+          ok: true,
+          data: await deleteInboxItemForCurrentWorkspace(
+            settingsDirectory,
+            readRequestString(request.itemId, "itemId")
+          )
+        };
     }
   } catch (error) {
     return {
@@ -201,6 +290,127 @@ async function resolveWorkspaceIpcRequest(
       }
     };
   }
+}
+
+async function readTodayFocusForCurrentWorkspace(
+  settingsDirectory: string
+): Promise<TodayFocusItem[]> {
+  return readTodayFocusItems(await requireCurrentWorkspacePath(settingsDirectory));
+}
+
+async function setTodayFocusOverrideForCurrentWorkspace(
+  settingsDirectory: string,
+  taskId: string,
+  action: TodayFocusOverrideAction
+): Promise<TodayFocusItem[]> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+
+  await setTodayFocusOverride(workspacePath, taskId, action);
+
+  return readTodayFocusItems(workspacePath);
+}
+
+async function readInboxItemsForCurrentWorkspace(
+  settingsDirectory: string
+): Promise<InboxItem[]> {
+  return readInboxItems(await requireCurrentWorkspacePath(settingsDirectory));
+}
+
+async function captureInboxItemForCurrentWorkspace(
+  settingsDirectory: string,
+  input: InboxItemInput
+): Promise<InboxMutationResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+  const item = await captureInboxItem(workspacePath, input);
+
+  return createInboxMutationResult(settingsDirectory, workspacePath, {
+    itemId: item.id
+  });
+}
+
+async function convertInboxItemToProjectForCurrentWorkspace(
+  settingsDirectory: string,
+  itemId: string
+): Promise<InboxMutationResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+  const project = await convertInboxItemToProject(workspacePath, itemId);
+
+  return createInboxMutationResult(settingsDirectory, workspacePath, {
+    itemId,
+    projectId: project.id
+  });
+}
+
+async function convertInboxItemToTaskForCurrentWorkspace(
+  settingsDirectory: string,
+  itemId: string,
+  projectId: string
+): Promise<InboxMutationResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+  const task = await convertInboxItemToTask(workspacePath, itemId, projectId);
+
+  return createInboxMutationResult(settingsDirectory, workspacePath, {
+    itemId,
+    projectId,
+    taskId: task.id
+  });
+}
+
+async function attachInboxItemToTaskContextForCurrentWorkspace(
+  settingsDirectory: string,
+  itemId: string,
+  projectId: string,
+  taskId: string
+): Promise<InboxMutationResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+
+  await attachInboxItemToTaskContext(workspacePath, itemId, projectId, taskId);
+
+  return createInboxMutationResult(settingsDirectory, workspacePath, {
+    itemId,
+    projectId,
+    taskId
+  });
+}
+
+async function archiveInboxItemForCurrentWorkspace(
+  settingsDirectory: string,
+  itemId: string
+): Promise<InboxMutationResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+
+  await archiveInboxItem(workspacePath, itemId);
+
+  return createInboxMutationResult(settingsDirectory, workspacePath, {
+    itemId
+  });
+}
+
+async function deleteInboxItemForCurrentWorkspace(
+  settingsDirectory: string,
+  itemId: string
+): Promise<InboxMutationResult> {
+  const workspacePath = await requireCurrentWorkspacePath(settingsDirectory);
+
+  await deleteInboxItem(workspacePath, itemId);
+
+  return createInboxMutationResult(settingsDirectory, workspacePath, {
+    itemId
+  });
+}
+
+async function createInboxMutationResult(
+  settingsDirectory: string,
+  workspacePath: string,
+  ids: { itemId?: string; projectId?: string; taskId?: string }
+): Promise<InboxMutationResult> {
+  return {
+    state: await getCurrentWorkspaceState({ settingsDirectory }),
+    inboxItems: await readInboxItems(workspacePath),
+    itemId: ids.itemId,
+    projectId: ids.projectId,
+    taskId: ids.taskId
+  };
 }
 
 async function createProjectForCurrentWorkspace(
@@ -355,6 +565,16 @@ function readRequestText(value: unknown, name: string): string {
   }
 
   return value;
+}
+
+function readTodayFocusOverrideAction(
+  value: unknown
+): TodayFocusOverrideAction {
+  if (value === "pin" || value === "snooze" || value === "hide") {
+    return value;
+  }
+
+  throw new Error("Workspace request has an invalid Today Focus override action.");
 }
 
 async function selectExistingWorkspace(
